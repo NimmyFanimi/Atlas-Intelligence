@@ -155,10 +155,16 @@ Reference point: a modern fintech studio's take on a trading terminal, closer to
 8. Explain new setup steps in small, literal, click-by-click terms.
 9. Assume frequent commits; suggest a natural commit point and a concise commit message at each logical stopping point.
 
-## Next Steps (in order)
+## Timeline
 
-1. Deploy to Vercel (not yet done)
-2. Configure cron-job.org to hit `/api/cron/market-snapshot` every 5-10 min with `Authorization: Bearer <CRON_SECRET>`
-3. Verify the full pipeline end-to-end
-4. Build the Markets Dashboard UI (currently only a design-system test page exists)
-5. Then News Engine, Economic Calendar, Morning Brief, Commodities deep-dive
+As of 2026-07-29: Vercel deploy, cron-job.org scheduling, and full pipeline verification are done (16/16 assets confirmed writing to Supabase). Only Markets Dashboard UI remains for Week 1. Nothing started on News Engine, Morning Brief, Economic Calendar, or Commodities deep-dive.
+
+## Itinerary (current source of truth, supersedes any flat list)
+
+**Rest of Week 1:** Build Markets Dashboard UI (watchlist, live prices, charts). Deploy/cron/pipeline verification are done. Goal: Markets Dashboard fully working and deployed.
+
+**Week 2:** News Engine: ingestion + Supabase schema for articles + AI summarization/"why it matters"/asset tagging + UI. This is the first AI integration, scheduled early deliberately since it's the riskiest unbuilt piece.
+
+**Week 3:** Morning Brief (AI-generated daily summary). Economic Calendar (data, UI, plain-English explanations).
+
+**Week 4:** Commodities deep-dive (per-commodity pages, top 5-6). Full pre-commit bug pass across all modules, cross-browser/mobile check, README finalized, remove dev-only pages before recruiters see it. Buffer for slippage.

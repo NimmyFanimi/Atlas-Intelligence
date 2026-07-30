@@ -238,14 +238,14 @@ Reference point: "what if a modern fintech studio redesigned a trading terminal 
 
 ## Timeline Status
 
-Halfway through Week 1 of the 4-week, 10-15 hrs/week plan, as of 2026-07-28. Roughly 3.5 weeks / 35-52 hrs remain. Only the Markets Dashboard's backend ingestion is built; nothing else is started, including both AI-integration modules (News Engine, Morning Brief). This itinerary is the current source of truth for what's left and in what order, superseding any earlier flat "next steps" list.
+As of 2026-07-29: Vercel deployment, cron-job.org scheduling, and full pipeline verification are all confirmed working (16/16 assets succeeding, real rows in `market_snapshots`, FRED rows correctly showing null change_pct/change_abs as designed). Only the Markets Dashboard UI remains for Week 1. Roughly 3.5 weeks remain overall; nothing in News Engine, Morning Brief, Economic Calendar, or Commodities deep-dive has started yet.
 
 ## Itinerary (remainder of Week 1 through Week 4)
 
 **Rest of Week 1 (this week)**
-- Deploy to Vercel
-- Configure cron-job.org to hit `/api/cron/market-snapshot` every 5-10 min with `Authorization: Bearer <CRON_SECRET>`
-- Verify the full pipeline end-to-end: cron triggers → ingestion runs → Supabase rows appear → confirm real data flowing
+- ~~Deploy to Vercel~~ Done 2026-07-28
+- ~~Configure cron-job.org to hit `/api/cron/market-snapshot` every 5 min with `Authorization: Bearer <CRON_SECRET>`~~ Done 2026-07-29
+- ~~Verify the full pipeline end-to-end~~ Done 2026-07-29, confirmed live in Supabase
 - Build the Markets Dashboard UI (currently only a design-system test page exists, no real dashboard UI yet): watchlist table/cards, live prices, basic charts
 - Goal: Markets Dashboard fully working and deployed
 
