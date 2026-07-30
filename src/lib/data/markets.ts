@@ -64,14 +64,15 @@ export async function getMarketsDashboard(): Promise<MarketsDashboardData> {
     .select('asset_id, timestamp, price, change_pct, change_abs, metadata')
     .in('asset_id', assetIds)
     .gte('timestamp', since)
-    .order('timestamp', { ascending: true });
+    .order('timestamp', { ascending: false })
+    .limit(3000);
 
   if (snapshotsError) {
     throw new Error(`Failed to load snapshots: ${snapshotsError.message}`);
   }
 
   const snapshotsByAsset = new Map<string, Snapshot[]>();
-  for (const snap of snapshots || []) {
+  for (const snap of [...(snapshots || [])].reverse()) {
     const existing = snapshotsByAsset.get(snap.asset_id) || [];
     existing.push({
       timestamp: snap.timestamp,

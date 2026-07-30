@@ -1,6 +1,6 @@
 'use client';
 
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, Area, ResponsiveContainer } from 'recharts';
 
 interface AssetSparklineProps {
   data: { timestamp: string; price: number }[];
@@ -18,16 +18,33 @@ export default function AssetSparkline({ data, changeDirection, size = 'sm' }: A
     );
   }
 
+  const strokeColor =
+    changeDirection === 'up'
+      ? 'var(--color-market-up)'
+      : changeDirection === 'down'
+      ? 'var(--color-market-down)'
+      : 'var(--color-accent)';
+
   return (
     <div className={`w-full ${heightClass}`}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+          <Area
+            type="monotone"
+            dataKey="price"
+            fill={strokeColor}
+            fillOpacity={0.12}
+            stroke="none"
+            dot={false}
+            isAnimationActive={false}
+          />
           <Line
             type="monotone"
             dataKey="price"
-            stroke={changeDirection === 'up' ? 'var(--color-market-up)' : changeDirection === 'down' ? 'var(--color-market-down)' : 'var(--color-accent)'}
+            stroke={strokeColor}
             strokeWidth={1}
             dot={false}
+            activeDot={false}
             isAnimationActive={false}
           />
         </LineChart>

@@ -28,6 +28,23 @@ function changeColorClass(color: ChangeColor): string {
   }
 }
 
+function ChangePctBadge({ value, className }: { value: number | null | undefined; className?: string }) {
+  const color = getChangeColor(value);
+  const bgClass =
+    color === 'up'
+      ? 'bg-[var(--color-market-up)]'
+      : color === 'down'
+      ? 'bg-[var(--color-market-down)]'
+      : 'bg-[var(--color-secondary)]';
+  return (
+    <span
+      className={`inline-flex items-center justify-center font-mono font-semibold rounded-full px-2 py-0.5 leading-none text-[var(--color-primary)] ${bgClass} ${className ?? ''}`}
+    >
+      {formatPercent(value)}
+    </span>
+  );
+}
+
 function getBadgeColor(assetClass: string): string {
   switch (assetClass) {
     case 'index': return 'rgba(59, 130, 246, 0.12)';
@@ -92,7 +109,6 @@ function AssetRow({
   onSelect: (id: string) => void;
 }) {
   const absColor = changeColorClass(getChangeColor(asset.latest?.change_abs));
-  const pctColor = changeColorClass(getChangeColor(asset.latest?.change_pct));
 
   return (
     <div
@@ -117,9 +133,7 @@ function AssetRow({
       <span className={`font-mono text-xs text-right ${absColor}`}>
         {formatChange(asset.latest?.change_abs)}
       </span>
-      <span className={`font-mono text-xs text-right ${pctColor}`}>
-        {formatPercent(asset.latest?.change_pct)}
-      </span>
+      <ChangePctBadge value={asset.latest?.change_pct} className="text-xs justify-self-end" />
       <div className="pl-2">
         <AssetSparkline data={asset.sparkline} changeDirection={getChangeColor(asset.latest?.change_pct)} />
       </div>
@@ -137,7 +151,6 @@ function AssetCard({
   onSelect: (id: string) => void;
 }) {
   const absColor = changeColorClass(getChangeColor(asset.latest?.change_abs));
-  const pctColor = changeColorClass(getChangeColor(asset.latest?.change_pct));
 
   const prices = asset.sparkline.map((p) => p.price);
   const high = prices.length > 0 ? Math.max(...prices) : null;
@@ -170,9 +183,7 @@ function AssetCard({
         <span className={`font-mono text-sm font-semibold ${absColor}`}>
           {formatChange(asset.latest?.change_abs)}
         </span>
-        <span className={`font-mono text-sm font-semibold ${pctColor}`}>
-          {formatPercent(asset.latest?.change_pct)}
-        </span>
+        <ChangePctBadge value={asset.latest?.change_pct} className="text-sm" />
       </div>
       <div className="mt-auto">
         <AssetSparkline data={asset.sparkline} changeDirection={getChangeColor(asset.latest?.change_pct)} size="lg" />
@@ -245,7 +256,6 @@ function Section({
 
 function DetailPanel({ asset }: { asset: AssetWithSnapshot }) {
   const absColor = changeColorClass(getChangeColor(asset.latest?.change_abs));
-  const pctColor = changeColorClass(getChangeColor(asset.latest?.change_pct));
 
   return (
     <div className="p-6">
@@ -278,9 +288,7 @@ function DetailPanel({ asset }: { asset: AssetWithSnapshot }) {
           <span className="block font-mono text-xs text-[var(--color-secondary)]">
             CHANGE %
           </span>
-          <span className={`font-mono text-2xl ${pctColor}`}>
-            {formatPercent(asset.latest?.change_pct)}
-          </span>
+          <ChangePctBadge value={asset.latest?.change_pct} className="text-2xl" />
         </div>
       </div>
       <DetailChart data={asset.sparkline} />
@@ -295,12 +303,12 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
   const { biggestMover, mostVolatile, breadth, totalAssets } = data.summary;
 
   return (
-    <div className="min-h-screen bg-[var(--color-background)]">
+    <div className="min-h-screen bg-[var(--color-background)] overflow-x-hidden">
       <div className="grid grid-cols-1 md:grid-cols-[1fr_400px]">
-        <div className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-6">
-            <div className="md:col-span-4 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase">BIGGEST MOVER</span>
+        <div className="p-4 min-w-0">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-6 overflow-x-hidden">
+            <div className="md:col-span-4 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
+              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">BIGGEST MOVER</span>
               {biggestMover ? (
                 <>
                   <div className="flex items-center gap-2">
@@ -312,17 +320,15 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
                   <span className="font-mono text-2xl font-semibold text-[var(--color-primary)]">
                     {biggestMover.latest ? formatPrice(biggestMover.latest.price) : 'n/a'}
                   </span>
-                  <span className={`font-mono text-sm font-semibold ${changeColorClass(getChangeColor(biggestMover.latest?.change_pct))}`}>
-                    {formatPercent(biggestMover.latest?.change_pct)}
-                  </span>
+                  <ChangePctBadge value={biggestMover.latest?.change_pct} className="text-sm self-start" />
                   <AssetSparkline data={biggestMover.sparkline} changeDirection={getChangeColor(biggestMover.latest?.change_pct)} />
                 </>
               ) : (
                 <span className="font-mono text-sm text-[var(--color-secondary)]">No data</span>
               )}
             </div>
-            <div className="md:col-span-4 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase">MOST VOLATILE</span>
+            <div className="md:col-span-4 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
+              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">MOST VOLATILE</span>
               {mostVolatile ? (
                 <>
                   <div className="flex items-center gap-2">
@@ -343,8 +349,8 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
                 <span className="font-mono text-sm text-[var(--color-secondary)]">No data</span>
               )}
             </div>
-            <div className="md:col-span-2 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase">MARKET BREADTH</span>
+            <div className="md:col-span-2 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
+              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">MARKET BREADTH</span>
               <div className="flex flex-col gap-1.5 mt-1">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-xl font-semibold text-[var(--color-market-up)]">{breadth.up}</span>
@@ -360,10 +366,10 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
                 </div>
               </div>
             </div>
-            <div className="md:col-span-2 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase">ASSETS TRACKED</span>
+            <div className="md:col-span-2 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
+              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">ASSETS TRACKED</span>
               <span className="font-mono text-2xl font-semibold text-[var(--color-primary)]">{totalAssets.total}</span>
-              <span className="font-mono text-xs text-[var(--color-secondary)]">{formatBreakdown(totalAssets.breakdown)}</span>
+              <span className="font-mono text-xs text-[var(--color-secondary)] min-w-0 w-full break-words">{formatBreakdown(totalAssets.breakdown)}</span>
             </div>
           </div>
 

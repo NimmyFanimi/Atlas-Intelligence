@@ -24,7 +24,8 @@ export default function DetailChart({ data }: DetailChartProps) {
   }
 
   const formatTime = (tick: string) => {
-    const date = new Date(tick);
+    const hasZone = /Z$|[+-]\d{2}:?\d{2}$/.test(tick);
+    const date = new Date(hasZone ? tick : `${tick}Z`);
     return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
@@ -64,6 +65,7 @@ export default function DetailChart({ data }: DetailChartProps) {
             tickLine={false}
           />
           <Tooltip
+            labelFormatter={(label) => formatTime(label as string)}
             contentStyle={{
               backgroundColor: 'var(--color-surface)',
               borderColor: 'var(--color-border)',
