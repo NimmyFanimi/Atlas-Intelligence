@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import AssetSparkline from './AssetSparkline';
 import DetailChart from './DetailChart';
 import { formatPrice, formatChange, formatPercent, formatVolatility, getChangeColor, ChangeColor } from '@/lib/utils/format';
@@ -88,6 +88,24 @@ function ViewToggle({ viewMode, onViewChange }: {
         List
       </button>
     </div>
+  );
+}
+
+function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {direction === 'left' ? <path d="m15 18-6-6 6-6" /> : <path d="m9 18 6-6-6-6" />}
+    </svg>
   );
 }
 
@@ -208,6 +226,8 @@ function Section({
   onSelect: (id: string) => void;
   viewMode: 'cards' | 'list';
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="mb-6 bg-[var(--color-surface)] border border-[var(--color-border)]">
       <div className="font-mono text-[13px] uppercase tracking-widest text-[var(--color-secondary)] px-5 py-3 flex items-center gap-2">
@@ -236,18 +256,37 @@ function Section({
           ))}
         </>
       ) : (
-        <div
-          className="flex gap-4 overflow-x-auto px-5 py-4"
-          style={{ scrollSnapType: 'x mandatory' }}
-        >
-          {assets.map((asset) => (
-            <AssetCard
-              key={asset.id}
-              asset={asset}
-              selected={asset.id === selectedId}
-              onSelect={onSelect}
-            />
-          ))}
+        <div className="relative group">
+          <button
+            type="button"
+            aria-label="Scroll left"
+            onClick={() => scrollRef.current?.scrollBy({ left: -300, behavior: 'smooth' })}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-[var(--color-surface)]/80 border border-[var(--color-border)] text-[var(--color-accent)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
+          >
+            <ChevronIcon direction="left" />
+          </button>
+          <div
+            ref={scrollRef}
+            className="carousel-scroll flex gap-4 overflow-x-auto px-5 py-4"
+            style={{ scrollSnapType: 'x mandatory' }}
+          >
+            {assets.map((asset) => (
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                selected={asset.id === selectedId}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            aria-label="Scroll right"
+            onClick={() => scrollRef.current?.scrollBy({ left: 300, behavior: 'smooth' })}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-[var(--color-surface)]/80 border border-[var(--color-border)] text-[var(--color-accent)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
+          >
+            <ChevronIcon direction="right" />
+          </button>
         </div>
       )}
     </div>
@@ -284,11 +323,11 @@ function DetailPanel({ asset }: { asset: AssetWithSnapshot }) {
             {formatChange(asset.latest?.change_abs)}
           </span>
         </div>
-        <div>
-          <span className="block font-mono text-xs text-[var(--color-secondary)]">
+        <div className="flex flex-col items-start">
+          <span className="block font-mono text-xs text-[var(--color-secondary)] mb-1">
             CHANGE %
           </span>
-          <ChangePctBadge value={asset.latest?.change_pct} className="text-2xl" />
+          <ChangePctBadge value={asset.latest?.change_pct} className="text-lg" />
         </div>
       </div>
       <DetailChart data={asset.sparkline} />
@@ -304,6 +343,15 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
 
   return (
     <div className="min-h-screen bg-[var(--color-background)] overflow-x-hidden">
+      <style>{`
+        .carousel-scroll {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .carousel-scroll::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
       <div className="grid grid-cols-1 md:grid-cols-[1fr_400px]">
         <div className="p-4 min-w-0">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-6 overflow-x-hidden">

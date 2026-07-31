@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="/compiled.css">
+<style>
+  @font-face {
+    font-family: 'JB';
+    src: url('https://fonts.gstatic.com/s/jetbrainsmono/v17/ttf/1YwE2YsQxKaju9eVXjhsAz9QT1xg.woff2') format('woff2');
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: 'JB';
+    src: url('https://fonts.gstatic.com/s/jetbrainsmono/v17/ttf/1YwH2YsQxKaju9eVXjhsAz9QT1xg.woff2') format('woff2');
+    font-weight: 600; font-style: normal; font-display: swap;
+  }
+  body { font-family: JB, monospace; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; width: 352px; }
+  .col { background: rgba(255,255,255,0.06); }
+  .badge { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 9999px; padding: 2px 8px; line-height: 1; font-size: 1.5rem; }
+  .bgDown { background: #C36B67; color: #0A0B0D; }
+  .jsStart { justify-self: start; }
+  #out { position: absolute; top: 20px; left: 420px; font-size: 11px; white-space: pre; color: #fff; }
+</style>
+</head><body>
+<div style="font-size:11px;color:#aaa">column width should be ~101px</div>
+<div class="grid3" id="gridA">
+  <div class="col"><span style="display:block;font-size:10px;color:#8B8F98">PRICE</span><span style="font-size:1.5rem;color:#E8E9EB">+12.45</span></div>
+  <div class="col"><span style="display:block;font-size:10px;color:#8B8F98">CHANGE</span><span style="font-size:1.5rem;color:#C36B67">+12.45</span></div>
+  <div class="col" id="colA3">
+    <span style="display:block;font-size:10px;color:#8B8F98">CHANGE %</span>
+    <span id="badgeA" class="badge bgDown">+2.45%</span>
+  </div>
+</div>
+<div style="margin-top:24px;font-size:11px">Case A badge (grandchild, inline-flex) width = badgeA.offsetWidth</div>
+<div id="out"></div>
+<script>
+function tw(s){const r=document.createElement('span');r.style.position='absolute';r.style.visibility='hidden';r.style.whiteSpace='pre';r.style.fontFamily='JB,monospace';r.style.fontSize='1.5rem';r.style.fontWeight='600';r.textContent=s;document.body.appendChild(r);const w=r.offsetWidth;document.body.removeChild(r);return w;}
+const out={
+ colWidth: document.getElementById('colA3').offsetWidth,
+ badgeA: document.getElementById('badgeA').offsetWidth,
+ textContentWidth: tw('+2.45%'),
+ expectedContentSized: tw('+2.45%')+16
+};
+document.getElementById('out').textContent=JSON.stringify(out,null,2);
+</script>
+</body></html>
