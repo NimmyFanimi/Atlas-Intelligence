@@ -41,6 +41,11 @@ export default function DetailChart({ data }: DetailChartProps) {
 
   return (
     <div className="w-full h-80">
+      <style>{`
+        .recharts-surface {
+          outline: none;
+        }
+      `}</style>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
           <CartesianGrid stroke="var(--color-border)" strokeWidth={1} />

@@ -296,6 +296,10 @@ function Section({
 function DetailPanel({ asset }: { asset: AssetWithSnapshot }) {
   const absColor = changeColorClass(getChangeColor(asset.latest?.change_abs));
 
+  const prices = asset.sparkline.map((p) => p.price);
+  const high = prices.length > 0 ? Math.max(...prices) : null;
+  const low = prices.length > 0 ? Math.min(...prices) : null;
+
   return (
     <div className="p-6">
       <div className="mb-3">
@@ -331,6 +335,18 @@ function DetailPanel({ asset }: { asset: AssetWithSnapshot }) {
         </div>
       </div>
       <DetailChart data={asset.sparkline} />
+      <div className="flex items-center justify-between gap-4 mt-3 pt-3 border-t border-[var(--color-border)]">
+        <span className="font-mono text-xs text-[var(--color-secondary)]">
+          H: {high !== null ? formatPrice(high) : 'n/a'} L: {low !== null ? formatPrice(low) : 'n/a'}
+        </span>
+        <span
+          className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold uppercase tracking-widest rounded px-2.5 py-1 leading-none"
+          style={{ backgroundColor: getBadgeColor(asset.asset_class), color: getDotColor(asset.asset_class) }}
+        >
+          <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: getDotColor(asset.asset_class) }} />
+          {asset.asset_class}
+        </span>
+      </div>
     </div>
   );
 }
@@ -436,7 +452,7 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
             />
           ))}
         </div>
-        <div className="border-t border-[var(--color-border)] md:border-t-0 md:border-l bg-[var(--color-surface)]">
+        <div className="border-t border-[var(--color-border)] md:border-t-0 md:border-l md:self-start bg-[var(--color-surface)]">
           {selectedAsset ? (
             <DetailPanel asset={selectedAsset} />
           ) : (
