@@ -26,8 +26,8 @@ When editing, make the smallest change that keeps the file accurate, don't rewri
 ## Scope (V1, do not expand without asking)
 
 Five modules only:
-1. Markets Dashboard: live and historical prices for a fixed watchlist
-2. News Engine: pulls financial news, AI-summarizes each article, explains why it matters, tags affected assets
+1. Markets Dashboard: live and historical prices for a fixed watchlist — **DONE**
+2. News Engine: pulls financial news, AI-summarizes each article, explains why it matters, tags affected assets — **IN PROGRESS (Week 2)**
 3. Morning Brief: daily summary of overnight moves, main driver, today's key risk events
 4. Economic Calendar: upcoming data releases with importance, previous/forecast/actual, plain-English explanation
 5. Commodities deep-dive: overview, price, supply/demand context, news, for top 5-6 commodities
@@ -50,11 +50,12 @@ Everything else (fixed income tools, FX carry calculators, geopolitical map, tra
 - Vercel for deployment
 - `src/` directory structure, config files at root
 
-## Data Sources and Critical Technical Constraint
+## Data Sources and Critical Technical Constraints
 
 - FRED: macro/rates data, end-of-day only
-- Finnhub: quotes, news, calendar, free tier caps at 60 calls/minute
+- Finnhub: quotes, calendar, free tier caps at 60 calls/minute
 - EIA: energy fundamentals (not yet wired in)
+- **Marketaux**: News Engine's news source (locked in Week 2 planning). Free tier ~100 requests/day. Provides built-in entity/ticker tagging and sentiment scoring per article, ingestion should query `/news/all` filtered by watchlist symbols AND separately pull broader macro/market news even without a direct ticker match (Fed decisions, geopolitical events often explain multi-asset moves and must not be filtered out).
 
 **Caching approach: scheduled refresh, not on-demand.** A scheduled job writes snapshots into Supabase. The frontend only ever reads from Supabase, never calls these APIs directly.
 
@@ -79,9 +80,11 @@ Everything else (fixed income tools, FX carry calculators, geopolitical map, tra
 
 Rates (US10Y, US2Y) use FRED directly (`DGS10`, `DGS2`), since bond ETF prices don't reflect yields.
 
+**Cron cadence is 5 minutes, deliberately not 1 minute.** At 1-minute cadence, projected storage growth exceeds Supabase's 500MB free-tier cap within roughly 3-4 months given this project's expected year-long lifespan; 5-minute cadence stays just under that cap across a full year. Do not change cadence without redoing this storage math.
+
 ## Environment Variables (in `.env.local`, already exist, never invent new names or paste real values into chat)
 
-`FINNHUB_API_KEY`, `FRED_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`. If a new one is genuinely needed, add a placeholder line to `.env.local` and tell the user to fill in the real value themselves, don't ask for it in chat.
+`FINNHUB_API_KEY`, `FRED_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`. If a new one is genuinely needed (e.g. `MARKETAUX_API_KEY`, a Gemini or Groq key for News Engine), add a placeholder line to `.env.local` and tell the user to fill in the real value themselves, don't ask for it in chat.
 
 ## Existing File Structure (check before creating new files, don't duplicate)
 
@@ -89,6 +92,9 @@ Rates (US10Y, US2Y) use FRED directly (`DGS10`, `DGS2`), since bond ETF prices d
 - `src/lib/supabase/` — `client.ts` (anon key, browser-safe, use for all frontend/UI reads) and `admin.ts` (service role key, server-only, use only in cron/ingestion code, must never be imported into client-side/browser code)
 - `src/lib/cron/` — `ingest-market-snapshots.ts`, the core ingestion loop
 - `src/app/api/cron/market-snapshot/route.ts` — the API route wrapping ingestion, checks `CRON_SECRET`
+- `src/lib/data/markets.ts` — server-side dashboard data fetch (`getMarketsDashboard`), used by `page.tsx`. Uses `.order('timestamp', { ascending: false })` with an explicit `.limit(3000)`, then reverses in JS. **Do not remove the explicit descending order + limit + reverse pattern**: an earlier ascending-order fetch with no limit silently hit Supabase's 1000-row default cap and served stale data for hours before being caught. See Known Gaps.
+- `src/lib/data/marketHistory.ts` — client-side timeframe-selector fetch (`fetchMarketHistory`), uses the anon/public Supabase client (not admin). Has its own explicit per-timeframe `.limit()` values (7D: 4000, 30D: 15000), sized to safely cover the full requested window at current 5-minute cadence before JS-side downsampling to ~120 points. If cron cadence ever changes, these limits must be recalculated, they are not automatically safe at a different write frequency.
+- `src/components/markets/` — `MarketsDashboard.tsx` (main client component: sections, summary row, cards/list toggle, detail panel, timeframe selector), `AssetSparkline.tsx`, `DetailChart.tsx`
 
 **Preserve existing patterns in the ingestion file**, don't "clean up" during unrelated edits: the 100ms defensive delay between Finnhub calls, and per-asset try/catch isolation (one failure must not abort the whole run).
 
@@ -106,15 +112,20 @@ Composite index on `(asset_id, timestamp DESC)`. RLS enabled: public read-only, 
 
 ## Known Gaps (deliberate, do not silently "fix")
 
-- FRED snapshots have null `change_pct`/`change_abs` by design. This is deferred to the dashboard UI stage, not the ingestion layer.
+- FRED snapshots have null `change_pct`/`change_abs` by design. Handled in the dashboard UI with an explicit "n/a" fallback, not a bug.
 - No retention/cleanup policy yet for `market_snapshots`.
+- **Historical fix, resolved but worth knowing:** `markets.ts`'s snapshot query originally used ascending order with no explicit `.limit()`, which silently hit Supabase's 1000-row default cap and served data that was stale by up to a day. Fixed by switching to descending order with an explicit limit, then reversing in JS. Any future query touching `market_snapshots` across multiple assets/a wide time window must set an explicit `.limit()` sized to the actual expected row count, never rely on the default cap.
+- News Engine's AI model choice (Gemini 3 Flash vs Groq/Llama 3.3 70B) is not yet locked in as of Week 2 start, pending a live output-quality comparison. See Week 2 itinerary.
 
 ## Budget Workarounds (do not undo these to "simplify")
 
 - ETF proxies instead of direct pricing (see above), forced by Finnhub's free-tier 403 on OANDA symbols.
 - Scheduled Supabase caching instead of live polling from the frontend.
-- Cron-job.org (external, free) instead of Vercel's native cron, because Vercel's free tier only allows daily cron schedules; a Next.js API route at `/api/cron/market-snapshot` does the actual ingestion, secured with a Bearer token (`CRON_SECRET`), and cron-job.org hits it on a 5-10 min schedule.
+- Cron-job.org (external, free) instead of Vercel's native cron, because Vercel's free tier only allows daily cron schedules; a Next.js API route at `/api/cron/market-snapshot` does the actual ingestion, secured with a Bearer token (`CRON_SECRET`), and cron-job.org hits it on a 5-minute schedule.
 - FRED calls are gated behind a "already fetched today" check rather than a separate schedule, since FRED only updates once a day.
+- **5-minute cron cadence chosen over 1-minute** specifically to stay within Supabase's 500MB free-tier storage cap across the project's expected year-long lifespan (see Data Sources section above for the math).
+- **Marketaux chosen over Finnhub's news endpoint** for News Engine: free tier easily covers actual usage (news polling doesn't need high frequency), and its built-in entity-tagging + sentiment scoring removes the need to build that logic from scratch.
+- **Claude's API was ruled out for News Engine's AI layer** despite being the most thematically fitting choice, because it has no ongoing free tier (only a one-time ~$5 trial credit), which conflicts with the £0 budget. Gemini 3 Flash and Groq (Llama 3.3 70B) are the two free-tier candidates under live evaluation instead.
 
 ## Design Language (hard rules, violating these means starting over)
 
@@ -130,16 +141,20 @@ Reference point: a modern fintech studio's take on a trading terminal, closer to
 **Colors (locked in):**
 - Background: `#0A0B0D`. Surface: `#14161A`. Borders: `#2A2D33` or low-opacity white.
 - Primary text: `#E8E9EB`. Secondary text: `#8B8F98`.
-- Accent: teal, used sparingly.
+- Accent: teal, used sparingly. **Explicitly reconsidered and reconfirmed during Week 1 polish** (an amber alternative was suggested externally and rejected, teal stays since it's already implemented everywhere and a switch had zero functional payoff).
 - Up/down: Sage Green / Dusty Coral (deliberately desaturated, not stoplight colors).
 
 **Typography:** two-font system, geometric sans for UI/labels/body, **JetBrains Mono** (not "or similar") for all numbers, prices, percentages, yields, dates. Real type scale (12/14/16/20/24/32px). Uppercase letter-spaced labels for section headers only, never body text.
 
-**Spacing:** consistent scale (4/8/12/16/24/32px), grid-based layout, compact but not cramped.
+A 4-tier text hierarchy is established and should be followed for any new UI: **Tier 1 hero** (prices, `text-2xl font-semibold` mono) → **Tier 2 primary** (names/labels, `text-sm`) → **Tier 3 metadata** (change values, ranges, timestamps, `text-xs` muted mono) → **Tier 4 structural label** (section/column headers, `text-xs uppercase tracking-widest`, most muted). Don't introduce a new one-off size for something that's conceptually one of these four tiers.
 
-**Components:** flat cards with hairline borders, no shadow, sharp or small radius (4-6px max). Charts: thin lines, muted gridlines, dark-themed tooltips. Tables: dense, monospace numbers right-aligned. Buttons: flat/outline, hover via brightness shift only. Icons: Lucide, consistent stroke.
+**Spacing:** consistent scale (4/8/12/16/24/32px), grid-based layout, compact but not cramped. Internal card dividers should be visually softer than primary card/section borders (reduced opacity), not the same full-strength border color.
 
-**Motion:** minimal, fade/slide only, no bounce, no decorative animation.
+**Components:** flat cards with hairline borders, no shadow, sharp or small radius (4-6px max). Charts: thin lines, muted gridlines, dark-themed tooltips, filled area under sparklines at low opacity (~12%) for visual weight, matching the line's own color, no gradients. Tables: dense, monospace numbers right-aligned. Buttons: flat/outline, hover via brightness shift only. Icons: Lucide, consistent stroke (raw inline SVG is acceptable where a component needs a specific icon and the library isn't already imported for it, don't add the dependency just for one icon).
+
+**Motion:** minimal, fade/slide only, no bounce, no decorative animation. All interactive elements (buttons, toggles, rows, cards) should use a consistent `transition-colors duration-150`.
+
+**Interactive elements must never show the browser's default focus/active outline.** Every clickable non-`<button>` element (divs acting as rows/cards) needs `tabIndex={0}`, `role="button"`, and `focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)]`. Native `<button>` elements need the focus-ring classes but not the `tabIndex`/`role` (already implicit). This bug has recurred three times across different components (list rows, carousel cards, a chart's own SVG surface), check for it proactively on any new interactive element rather than waiting for it to be reported.
 
 **Tailwind v4 note:** no `tailwind.config.ts`, tokens live in CSS via `@theme`. No global `background-image: none` CSS lock, gradient avoidance is enforced through code discipline instead.
 
@@ -154,17 +169,23 @@ Reference point: a modern fintech studio's take on a trading terminal, closer to
 7. Never put real API keys/secrets directly in chat or in generated code; reference `.env.local` variable names only.
 8. Explain new setup steps in small, literal, click-by-click terms.
 9. Assume frequent commits; suggest a natural commit point and a concise commit message at each logical stopping point.
+10. **When any query touches `market_snapshots` (or any table expected to grow large) across multiple rows/a time range, always set an explicit `.limit()` sized to the actual expected row count at current write frequency. Never rely on Supabase's default 1000-row cap.** This is not a style preference, it caused a real, hours-long silent data-staleness bug once already.
+11. When diagnosing a visual/rendering bug, investigate the actual root cause (read the library's source if needed, check compiled CSS output, trace the actual DOM/component tree) rather than guessing at a plausible-sounding fix and moving on. A guessed fix that happens to look right in one screenshot has previously turned out to be wrong in a different context (e.g. a badge-sizing fix that worked in one card but not in the detail panel, because the actual cause was different in each location).
 
 ## Timeline
 
-As of 2026-07-29: Vercel deploy, cron-job.org scheduling, and full pipeline verification are done (16/16 assets confirmed writing to Supabase). Only Markets Dashboard UI remains for Week 1. Nothing started on News Engine, Morning Brief, Economic Calendar, or Commodities deep-dive.
+As of 2026-08-01: **Week 1 is complete.** Markets Dashboard is fully built, polished, and deployed: watchlist sections, list/carousel toggle, summary stats row, detail panel with a working 1H/12H/1D/7D/30D timeframe selector, full typography/spacing/interaction polish pass done. Week 2 (News Engine) has started planning: news source, tagging approach, and the general AI-model shortlist are decided, final AI model pending a live quality comparison.
 
 ## Itinerary (current source of truth, supersedes any flat list)
 
-**Rest of Week 1:** Build Markets Dashboard UI (watchlist, live prices, charts). Deploy/cron/pipeline verification are done. Goal: Markets Dashboard fully working and deployed.
+**Week 1: DONE.** Markets Dashboard fully working, polished, and deployed.
 
-**Week 2:** News Engine: ingestion + Supabase schema for articles + AI summarization/"why it matters"/asset tagging + UI. This is the first AI integration, scheduled early deliberately since it's the riskiest unbuilt piece.
+**Week 2 (in progress):** News Engine.
+- News source: Marketaux (locked in), not Finnhub's news endpoint. Ingest both watchlist-tagged articles and broader macro/market news.
+- AI summarization/"why it matters"/asset tagging: asset tagging comes largely for free from Marketaux's entity tagging. AI model for summarization is undecided between Gemini 3 Flash and Groq's Llama 3.3 70B, pending a live side-by-side test with a carefully engineered analyst-style prompt (requirement: output must read like a thoughtful junior analyst's genuine analysis, not a generic AI recap; this is a hard quality bar and both candidate models are a real step down from frontier-tier reasoning, so prompt engineering effort matters here).
+- UI: needs the same level of aesthetic care and iteration as Week 1's Markets Dashboard required, budget real design-review time, don't treat visual polish as a final pass tacked on at the end.
+- This is the first AI integration, scheduled early deliberately since it's the riskiest unbuilt piece.
 
-**Week 3:** Morning Brief (AI-generated daily summary). Economic Calendar (data, UI, plain-English explanations).
+**Week 3:** Morning Brief (AI-generated daily summary). Economic Calendar (data, UI, plain-English explanations). Note: a Palantir-style causal-chain presentation idea and an "AI Observation" panel style (short analytical takes with confidence scores) were suggested externally during Week 1 and parked as relevant to News Engine/this module, worth revisiting here rather than building from scratch.
 
-**Week 4:** Commodities deep-dive (per-commodity pages, top 5-6). Full pre-commit bug pass across all modules, cross-browser/mobile check, README finalized, remove dev-only pages before recruiters see it. Buffer for slippage.
+**Week 4:** Commodities deep-dive (per-commodity pages, top 5-6) → full pre-commit bug pass → cross-browser/mobile check → README finalized → remove dev-only pages before recruiter visibility → buffer.
