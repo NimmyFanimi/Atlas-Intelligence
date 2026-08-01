@@ -12,9 +12,17 @@ import {
 
 interface DetailChartProps {
   data: { timestamp: string; price: number }[];
+  timeframe: string;
 }
 
-export default function DetailChart({ data }: DetailChartProps) {
+const LONG_TIMEFRAMES = new Set(['7D', '30D']);
+
+function parseTimestamp(timestamp: string): Date {
+  const hasZone = /Z$|[+-]\d{2}:?\d{2}$/.test(timestamp);
+  return new Date(hasZone ? timestamp : `${timestamp}Z`);
+}
+
+export default function DetailChart({ data, timeframe }: DetailChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="w-full h-80 flex items-center justify-center text-[var(--color-secondary)] font-mono text-xs">
@@ -23,13 +31,36 @@ export default function DetailChart({ data }: DetailChartProps) {
     );
   }
 
+  const isLongRange = LONG_TIMEFRAMES.has(timeframe);
+
   const formatTime = (tick: string) => {
-    const hasZone = /Z$|[+-]\d{2}:?\d{2}$/.test(tick);
-    const date = new Date(hasZone ? tick : `${tick}Z`);
-    return date.toLocaleTimeString('en-US', {
+    return parseTimestamp(tick).toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const formatDate = (tick: string) => {
+    return parseTimestamp(tick).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const formatAxisTick = (tick: string) => {
+    return isLongRange ? formatDate(tick) : formatTime(tick);
+  };
+
+  const formatTooltipLabel = (label: string) => {
+    if (isLongRange) {
+      return parseTimestamp(label).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+    return formatTime(label);
   };
 
   const formatPriceTick = (value: number) => {
@@ -48,20 +79,20 @@ export default function DetailChart({ data }: DetailChartProps) {
       `}</style>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
-          <CartesianGrid stroke="var(--color-border)" strokeWidth={1} />
+          <CartesianGrid stroke="rgba(42, 45, 51, 0.5)" strokeWidth={1} />
           <XAxis
             dataKey="timestamp"
             stroke="var(--color-secondary)"
-            fontSize={11}
+            fontSize={12}
             tick={{ style: { fontFamily: 'var(--font-jetbrains-mono)' } }}
-            tickFormatter={formatTime}
+            tickFormatter={formatAxisTick}
             minTickGap={8}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
             stroke="var(--color-secondary)"
-            fontSize={11}
+            fontSize={12}
             tick={{ style: { fontFamily: 'var(--font-jetbrains-mono)' } }}
             tickFormatter={formatPriceTick}
             domain={['dataMin', 'dataMax']}
@@ -70,7 +101,7 @@ export default function DetailChart({ data }: DetailChartProps) {
             tickLine={false}
           />
           <Tooltip
-            labelFormatter={(label) => formatTime(label as string)}
+            labelFormatter={(label) => formatTooltipLabel(label as string)}
             contentStyle={{
               backgroundColor: 'var(--color-surface)',
               borderColor: 'var(--color-border)',
@@ -78,12 +109,12 @@ export default function DetailChart({ data }: DetailChartProps) {
             }}
             labelStyle={{
               color: 'var(--color-secondary)',
-              fontSize: 11,
+              fontSize: 12,
               fontFamily: 'var(--font-jetbrains-mono)',
             }}
             itemStyle={{
               color: 'var(--color-primary)',
-              fontSize: 11,
+              fontSize: 12,
               fontFamily: 'var(--font-jetbrains-mono)',
             }}
             formatter={(value) => {

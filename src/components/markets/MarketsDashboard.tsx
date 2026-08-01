@@ -1,10 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AssetSparkline from './AssetSparkline';
 import DetailChart from './DetailChart';
 import { formatPrice, formatChange, formatPercent, formatVolatility, getChangeColor, ChangeColor } from '@/lib/utils/format';
-import { MarketsDashboardData, AssetWithSnapshot, MarketsSummary } from '@/lib/data/markets';
+import { MarketsDashboardData, AssetWithSnapshot } from '@/lib/data/markets';
+import { TIMEFRAMES, fetchMarketHistory, ChartPoint } from '@/lib/data/marketHistory';
 
 const SECTION_LABELS: Record<string, string> = {
   index: 'Indices',
@@ -76,14 +77,14 @@ function ViewToggle({ viewMode, onViewChange }: {
       <button
         type="button"
         onClick={() => onViewChange('cards')}
-        className={`px-3 py-1 ${viewMode === 'cards' ? 'bg-[var(--color-accent)] text-[var(--color-background)]' : 'text-[var(--color-secondary)] hover:text-[var(--color-primary)]'}`}
+        className={`px-3 py-1 transition-colors duration-150 ${viewMode === 'cards' ? 'bg-[var(--color-accent)] text-[var(--color-background)]' : 'text-[var(--color-secondary)] hover:text-[var(--color-primary)]'}`}
       >
         Cards
       </button>
       <button
         type="button"
         onClick={() => onViewChange('list')}
-        className={`px-3 py-1 ${viewMode === 'list' ? 'bg-[var(--color-accent)] text-[var(--color-background)]' : 'text-[var(--color-secondary)] hover:text-[var(--color-primary)]'}`}
+        className={`px-3 py-1 transition-colors duration-150 ${viewMode === 'list' ? 'bg-[var(--color-accent)] text-[var(--color-background)]' : 'text-[var(--color-secondary)] hover:text-[var(--color-primary)]'}`}
       >
         List
       </button>
@@ -132,8 +133,9 @@ function AssetRow({
     <div
       className={`
         ${GRID_COLS} items-center px-5 h-12 cursor-pointer
-        border-b border-[var(--color-border)] last:border-b-0
+        border-b border-[var(--color-border)]/50 last:border-b-0
         hover:bg-[#2A2D33]/20
+        transition-colors duration-150
         focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)]
       `}
       style={selected ? { backgroundColor: 'rgba(13, 148, 136, 0.05)' } : undefined}
@@ -144,7 +146,7 @@ function AssetRow({
       <span className="inline-flex items-center justify-center font-mono text-xs text-[var(--color-primary)] rounded px-1.5 py-0.5 leading-none" style={{ backgroundColor: getBadgeColor(asset.asset_class) }}>
         {asset.symbol}
       </span>
-      <span className="text-xs text-[var(--color-primary)] truncate">{asset.name}</span>
+      <span className="text-sm text-[var(--color-primary)] truncate">{asset.name}</span>
       <span className="font-mono text-sm font-semibold text-[var(--color-primary)] text-right">
         {asset.latest ? formatPrice(asset.latest.price) : 'n/a'}
       </span>
@@ -181,6 +183,7 @@ function AssetCard({
         bg-[var(--color-surface)] border border-[var(--color-border)]
         p-4 flex flex-col gap-2
         cursor-pointer
+        transition-colors duration-150
         focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)]
       `}
       style={selected ? { backgroundColor: 'rgba(13, 148, 136, 0.05)' } : undefined}
@@ -192,16 +195,16 @@ function AssetCard({
         <span className="inline-flex items-center justify-center font-mono text-xs text-[var(--color-primary)] rounded px-1.5 py-0.5 leading-none" style={{ backgroundColor: getBadgeColor(asset.asset_class) }}>
           {asset.symbol}
         </span>
-        <span className="text-xs text-[var(--color-secondary)] truncate">{asset.name}</span>
+        <span className="text-sm text-[var(--color-primary)] truncate">{asset.name}</span>
       </div>
       <span className="font-mono text-2xl font-semibold text-[var(--color-primary)]">
         {asset.latest ? formatPrice(asset.latest.price) : 'n/a'}
       </span>
       <div className="flex items-center gap-3">
-        <span className={`font-mono text-sm font-semibold ${absColor}`}>
+        <span className={`font-mono text-xs ${absColor}`}>
           {formatChange(asset.latest?.change_abs)}
         </span>
-        <ChangePctBadge value={asset.latest?.change_pct} className="text-sm" />
+        <ChangePctBadge value={asset.latest?.change_pct} className="text-xs" />
       </div>
       <div className="mt-auto">
         <AssetSparkline data={asset.sparkline} changeDirection={getChangeColor(asset.latest?.change_pct)} size="lg" />
@@ -230,14 +233,14 @@ function Section({
 
   return (
     <div className="mb-6 bg-[var(--color-surface)] border border-[var(--color-border)]">
-      <div className="font-mono text-[13px] uppercase tracking-widest text-[var(--color-secondary)] px-5 py-3 flex items-center gap-2">
+      <div className="font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70 px-5 py-3 flex items-center gap-2">
         <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: getDotColor(section) }} />
         {sectionLabel(section)}
       </div>
       {viewMode === 'list' ? (
         <>
           <div
-            className={`${GRID_COLS} font-mono text-xs font-semibold text-[var(--color-secondary)] px-5 py-1`}
+            className={`${GRID_COLS} font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70 px-5 py-1`}
           >
             <span>SYMBOL</span>
             <span>NAME</span>
@@ -300,10 +303,36 @@ function DetailPanel({ asset }: { asset: AssetWithSnapshot }) {
   const high = prices.length > 0 ? Math.max(...prices) : null;
   const low = prices.length > 0 ? Math.min(...prices) : null;
 
+  const [timeframe, setTimeframe] = useState<string>('1D');
+  const [chartData, setChartData] = useState<ChartPoint[]>(asset.sparkline);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+
+  const requestKey = `${asset.id}|${timeframe}`;
+  const isLoading = timeframe !== '1D' && loadedKey !== requestKey;
+  const displayData = timeframe === '1D' ? asset.sparkline : chartData;
+
+  useEffect(() => {
+    const requestId = ++requestIdRef.current;
+    if (timeframe === '1D') return;
+
+    fetchMarketHistory(asset.id, timeframe)
+      .then((rows) => {
+        if (requestIdRef.current !== requestId) return;
+        setChartData(rows);
+        setLoadedKey(requestKey);
+      })
+      .catch(() => {
+        if (requestIdRef.current !== requestId) return;
+        setChartData(asset.sparkline);
+        setLoadedKey(requestKey);
+      });
+  }, [asset.id, asset.sparkline, requestKey, timeframe]);
+
   return (
-    <div className="p-6">
+    <div className="p-4">
       <div className="mb-3">
-        <h2 className="text-[var(--color-primary)] text-sm font-semibold">
+        <h2 className="text-sm text-[var(--color-primary)]">
           {asset.name}
         </h2>
         <span className="font-mono text-xs text-[var(--color-secondary)]">
@@ -312,30 +341,56 @@ function DetailPanel({ asset }: { asset: AssetWithSnapshot }) {
       </div>
       <div className="grid grid-cols-3 gap-6 mb-3">
         <div>
-          <span className="block font-mono text-xs text-[var(--color-secondary)]">
+          <span className="block font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70">
             PRICE
           </span>
-          <span className="font-mono text-2xl text-[var(--color-primary)]">
+          <span className="font-mono text-2xl font-semibold text-[var(--color-primary)]">
             {asset.latest ? formatPrice(asset.latest.price) : 'n/a'}
           </span>
         </div>
         <div>
-          <span className="block font-mono text-xs text-[var(--color-secondary)]">
+          <span className="block font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70">
             CHANGE
           </span>
-          <span className={`font-mono text-2xl ${absColor}`}>
+          <span className={`font-mono text-2xl font-semibold ${absColor}`}>
             {formatChange(asset.latest?.change_abs)}
           </span>
         </div>
         <div className="flex flex-col items-start">
-          <span className="block font-mono text-xs text-[var(--color-secondary)] mb-1">
+          <span className="block font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70 mb-1">
             CHANGE %
           </span>
           <ChangePctBadge value={asset.latest?.change_pct} className="text-lg" />
         </div>
       </div>
-      <DetailChart data={asset.sparkline} />
-      <div className="flex items-center justify-between gap-4 mt-3 pt-3 border-t border-[var(--color-border)]">
+      <div className="inline-flex items-center gap-1 p-1 mb-3 bg-[var(--color-surface)] border border-[var(--color-border)] font-mono text-xs">
+        {TIMEFRAMES.map((tf) => (
+          <button
+            key={tf.key}
+            type="button"
+            onClick={() => setTimeframe(tf.key)}
+            className={`px-2.5 py-1 transition-colors duration-150 focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)] ${
+              timeframe === tf.key
+                ? 'bg-[var(--color-accent)] text-[var(--color-background)]'
+                : 'text-[var(--color-secondary)] hover:text-[var(--color-primary)]'
+            }`}
+          >
+            {tf.label}
+          </button>
+        ))}
+      </div>
+      {isLoading ? (
+        <div className="w-full h-80 flex items-center justify-center text-[var(--color-secondary)] font-mono text-xs">
+          Loading...
+        </div>
+      ) : displayData.length < 3 ? (
+        <div className="w-full h-80 flex items-center justify-center text-[var(--color-secondary)] font-mono text-xs">
+          Limited historical data available for this range
+        </div>
+      ) : (
+        <DetailChart data={displayData} timeframe={timeframe} />
+      )}
+      <div className="flex items-center justify-between gap-4 mt-3 pt-3 border-t border-[var(--color-border)]/50">
         <span className="font-mono text-xs text-[var(--color-secondary)]">
           H: {high !== null ? formatPrice(high) : 'n/a'} L: {low !== null ? formatPrice(low) : 'n/a'}
         </span>
@@ -372,66 +427,66 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
         <div className="p-4 min-w-0">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-6 overflow-x-hidden">
             <div className="md:col-span-4 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">BIGGEST MOVER</span>
+              <span className="font-mono text-xs text-[var(--color-secondary)]/70 tracking-widest uppercase min-w-0 w-full">BIGGEST MOVER</span>
               {biggestMover ? (
                 <>
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center justify-center font-mono text-xs text-[var(--color-primary)] rounded px-1.5 py-0.5 leading-none" style={{ backgroundColor: getBadgeColor(biggestMover.asset_class) }}>
                       {biggestMover.symbol}
                     </span>
-                    <span className="text-xs text-[var(--color-primary)] truncate">{biggestMover.name}</span>
+                    <span className="text-sm text-[var(--color-primary)] truncate">{biggestMover.name}</span>
                   </div>
                   <span className="font-mono text-2xl font-semibold text-[var(--color-primary)]">
                     {biggestMover.latest ? formatPrice(biggestMover.latest.price) : 'n/a'}
                   </span>
-                  <ChangePctBadge value={biggestMover.latest?.change_pct} className="text-sm self-start" />
+                  <ChangePctBadge value={biggestMover.latest?.change_pct} className="text-xs self-start" />
                   <AssetSparkline data={biggestMover.sparkline} changeDirection={getChangeColor(biggestMover.latest?.change_pct)} />
                 </>
               ) : (
-                <span className="font-mono text-sm text-[var(--color-secondary)]">No data</span>
+                <span className="font-mono text-xs text-[var(--color-secondary)]">No data</span>
               )}
             </div>
             <div className="md:col-span-4 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">MOST VOLATILE</span>
+              <span className="font-mono text-xs text-[var(--color-secondary)]/70 tracking-widest uppercase min-w-0 w-full">MOST VOLATILE</span>
               {mostVolatile ? (
                 <>
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center justify-center font-mono text-xs text-[var(--color-primary)] rounded px-1.5 py-0.5 leading-none" style={{ backgroundColor: getBadgeColor(mostVolatile.asset.asset_class) }}>
                       {mostVolatile.asset.symbol}
                     </span>
-                    <span className="text-xs text-[var(--color-primary)] truncate">{mostVolatile.asset.name}</span>
+                    <span className="text-sm text-[var(--color-primary)] truncate">{mostVolatile.asset.name}</span>
                   </div>
                   <span className="font-mono text-2xl font-semibold text-[var(--color-primary)]">
                     {mostVolatile.asset.latest ? formatPrice(mostVolatile.asset.latest.price) : 'n/a'}
                   </span>
-                  <span className="font-mono text-sm font-semibold text-[var(--color-secondary)]">
+                  <span className="font-mono text-xs text-[var(--color-secondary)]">
                     {formatVolatility(mostVolatile.volatility)}
                   </span>
                   <AssetSparkline data={mostVolatile.asset.sparkline} changeDirection={getChangeColor(mostVolatile.asset.latest?.change_pct)} />
                 </>
               ) : (
-                <span className="font-mono text-sm text-[var(--color-secondary)]">No data</span>
+                <span className="font-mono text-xs text-[var(--color-secondary)]">No data</span>
               )}
             </div>
             <div className="md:col-span-2 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">MARKET BREADTH</span>
+              <span className="font-mono text-xs text-[var(--color-secondary)]/70 tracking-widest uppercase min-w-0 w-full">MARKET BREADTH</span>
               <div className="flex flex-col gap-1.5 mt-1">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xl font-semibold text-[var(--color-market-up)]">{breadth.up}</span>
-                  <span className="font-mono text-xs text-[var(--color-secondary)]">UP</span>
+                  <span className="font-mono text-2xl font-semibold text-[var(--color-market-up)]">{breadth.up}</span>
+                  <span className="font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70">UP</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xl font-semibold text-[var(--color-market-down)]">{breadth.down}</span>
-                  <span className="font-mono text-xs text-[var(--color-secondary)]">DOWN</span>
+                  <span className="font-mono text-2xl font-semibold text-[var(--color-market-down)]">{breadth.down}</span>
+                  <span className="font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70">DOWN</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xl font-semibold text-[var(--color-secondary)]">{breadth.flat}</span>
-                  <span className="font-mono text-xs text-[var(--color-secondary)]">FLAT</span>
+                  <span className="font-mono text-2xl font-semibold text-[var(--color-secondary)]">{breadth.flat}</span>
+                  <span className="font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]/70">FLAT</span>
                 </div>
               </div>
             </div>
             <div className="md:col-span-2 min-w-0 bg-[var(--color-surface)] border border-[var(--color-border)] p-4 flex flex-col gap-2">
-              <span className="font-mono text-xs text-[var(--color-secondary)] tracking-widest uppercase min-w-0 w-full">ASSETS TRACKED</span>
+              <span className="font-mono text-xs text-[var(--color-secondary)]/70 tracking-widest uppercase min-w-0 w-full">ASSETS TRACKED</span>
               <span className="font-mono text-2xl font-semibold text-[var(--color-primary)]">{totalAssets.total}</span>
               <span className="font-mono text-xs text-[var(--color-secondary)] min-w-0 w-full break-words">{formatBreakdown(totalAssets.breakdown)}</span>
             </div>
