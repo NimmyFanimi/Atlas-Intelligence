@@ -26,6 +26,17 @@ const GEMINI_MODEL = 'gemini-3.6-flash';
 // slowing down a run of a handful of articles.
 const DELAY_BETWEEN_CALLS_MS = 2000;
 
+// Caps how many unanalyzed articles a single run processes. This exists
+// specifically because cron-job.org's free tier enforces a hard 30-second
+// request timeout, and this route's own maxDuration (60s) is irrelevant
+// if the scheduler gives up waiting before then. With a 2s delay between
+// calls, 5 articles worst-case is roughly 5 x (call time + 2s), which
+// comfortably fits inside 30s even if individual Gemini calls are slow.
+// Any backlog beyond this cap simply gets picked up on the next scheduled
+// run (every 2 hours), since the query is always "find rows where
+// ai_analysis IS NULL", not tied to a specific run.
+const MAX_ARTICLES_PER_RUN = 5;
+
 interface UnanalyzedArticle {
   id: string;
   title: string;
@@ -158,7 +169,8 @@ export async function analyzeUnprocessedArticles(): Promise<{
   const { data, error } = await supabaseAdmin
     .from('news_articles')
     .select('id, title, description, source')
-    .is('ai_analysis', null);
+    .is('ai_analysis', null)
+    .limit(MAX_ARTICLES_PER_RUN);
 
   if (error) {
     throw new Error(`Failed to fetch unanalyzed articles: ${error.message}`);
