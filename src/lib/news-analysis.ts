@@ -21,21 +21,25 @@ const GEMINI_MODEL = 'gemini-3.6-flash';
 // Small delay between consecutive Gemini calls so a burst of articles in
 // one run never stacks more requests than the free-tier RPM limit into
 // the same 60-second window. Confirmed live limit for this project is
-// 5 RPM, so anything comfortably under that (e.g. one call every 2s,
-// well under 30/min) leaves generous headroom without materially
-// slowing down a run of a handful of articles.
-const DELAY_BETWEEN_CALLS_MS = 2000;
+// 5 RPM, and observed peak usage is only ~3 RPM, so 800ms between calls
+// (comfortably under the ~857ms floor 5 RPM would allow) still leaves
+// real headroom while freeing up time budget against cron-job.org's hard
+// 30-second timeout (see MAX_ARTICLES_PER_RUN below for the full reasoning).
+const DELAY_BETWEEN_CALLS_MS = 800;
 
 // Caps how many unanalyzed articles a single run processes. This exists
 // specifically because cron-job.org's free tier enforces a hard 30-second
 // request timeout, and this route's own maxDuration (60s) is irrelevant
-// if the scheduler gives up waiting before then. With a 2s delay between
-// calls, 5 articles worst-case is roughly 5 x (call time + 2s), which
-// comfortably fits inside 30s even if individual Gemini calls are slow.
-// Any backlog beyond this cap simply gets picked up on the next scheduled
-// run (every 2 hours), since the query is always "find rows where
+// if the scheduler gives up waiting before then. A real run on 2026-08-04
+// returned 200 from Vercel but still got marked "Failed (timeout)" by
+// cron-job.org, confirming the server-side response was taking too long
+// even with the previous cap of 5. Lowered to 2 here: worst case is
+// roughly 2 x (call time + 0.8s), which stays comfortably under 30s even
+// if individual Gemini calls run slow (3-4s each). Any backlog beyond
+// this cap simply gets picked up on the next scheduled run (every 2
+// hours), since the query is always "find rows where
 // ai_analysis IS NULL", not tied to a specific run.
-const MAX_ARTICLES_PER_RUN = 5;
+const MAX_ARTICLES_PER_RUN = 2;
 
 interface UnanalyzedArticle {
   id: string;
