@@ -15,12 +15,79 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Sun,
+  Calendar,
+  Droplet,
 } from 'lucide-react';
 
-interface SidebarProps {
-  isCollapsed: boolean;
-  setIsCollapsed: (collapsed: boolean) => void;
+// ─── Single source of truth for all nav items ────────────────────────────────
+
+interface ActiveNavDef {
+  kind: 'active';
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
 }
+
+interface PlannedNavDef {
+  kind: 'coming-soon' | 'planned';
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  tooltipTextExpanded?: string;
+  tooltipTextCollapsed?: string;
+}
+
+type NavDef = ActiveNavDef | PlannedNavDef;
+
+const NAV_ITEMS: NavDef[] = [
+  // ── Active ──────────────────────────────────────────────────────────────
+  { kind: 'active', href: '/',     icon: LayoutDashboard, label: 'Markets Dashboard' },
+  { kind: 'active', href: '/news', icon: Newspaper,       label: 'News Engine'       },
+
+  // ── Coming Soon ─────────────────────────────────────────────────────────
+  {
+    kind: 'coming-soon',
+    icon: Sun,
+    label: 'Morning Brief',
+    tooltipTextExpanded:  'Coming in Week 3',
+    tooltipTextCollapsed: 'Morning Brief (Week 3)',
+  },
+  {
+    kind: 'coming-soon',
+    icon: Calendar,
+    label: 'Economic Calendar',
+    tooltipTextExpanded:  'Coming in Week 3',
+    tooltipTextCollapsed: 'Economic Calendar (Week 3)',
+  },
+  {
+    kind: 'coming-soon',
+    icon: Droplet,
+    label: 'Commodities Intelligence',
+    tooltipTextExpanded:  'Coming in Week 4',
+    tooltipTextCollapsed: 'Commodities Intelligence (Week 4)',
+  },
+
+  // ── Planned ─────────────────────────────────────────────────────────────
+  { kind: 'planned', icon: TrendingUp, label: 'Fixed Income Tools',
+    tooltipTextExpanded: 'Coming in a future week', tooltipTextCollapsed: 'Fixed Income Tools (Planned)' },
+  { kind: 'planned', icon: Coins,      label: 'FX Calculators',
+    tooltipTextExpanded: 'Coming in a future week', tooltipTextCollapsed: 'FX Calculators (Planned)' },
+  { kind: 'planned', icon: Compass,    label: 'Geopolitical Map',
+    tooltipTextExpanded: 'Coming in a future week', tooltipTextCollapsed: 'Geopolitical Map (Planned)' },
+  { kind: 'planned', icon: BookOpen,   label: 'Trade Journal',
+    tooltipTextExpanded: 'Coming in a future week', tooltipTextCollapsed: 'Trade Journal (Planned)' },
+  { kind: 'planned', icon: Archive,    label: 'Research Library',
+    tooltipTextExpanded: 'Coming in a future week', tooltipTextCollapsed: 'Research Library (Planned)' },
+  { kind: 'planned', icon: Network,    label: 'Correlations',
+    tooltipTextExpanded: 'Coming in a future week', tooltipTextCollapsed: 'Correlations (Planned)' },
+];
+
+// Derived slices — always in sync with NAV_ITEMS
+const activeItems     = NAV_ITEMS.filter((n): n is ActiveNavDef  => n.kind === 'active');
+const comingSoonItems = NAV_ITEMS.filter((n): n is PlannedNavDef => n.kind === 'coming-soon');
+const plannedItems    = NAV_ITEMS.filter((n): n is PlannedNavDef => n.kind === 'planned');
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 interface NavItemProps {
   href: string;
@@ -31,7 +98,6 @@ interface NavItemProps {
 
 function NavItem({ href, icon: Icon, label, isCollapsed }: NavItemProps) {
   const pathname = usePathname();
-  // Match dashboard `/` exactly, other routes by prefix
   const isActive = href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
 
   return (
@@ -48,8 +114,8 @@ function NavItem({ href, icon: Icon, label, isCollapsed }: NavItemProps) {
       )}
       <Icon className={`w-4 h-4 flex-shrink-0 transition-colors duration-150 ${isActive ? 'text-[var(--color-accent)]' : ''}`} />
       <span
-        className={`font-sans text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden ${
-          isCollapsed ? 'max-w-0 opacity-0 ml-0' : 'max-w-[200px] opacity-100 ml-3'
+        className={`font-sans text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis ${
+          isCollapsed ? 'max-w-0 opacity-0 ml-0' : 'max-w-[180px] opacity-100 ml-3'
         }`}
       >
         {label}
@@ -67,19 +133,25 @@ interface PlannedItemProps {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   isCollapsed: boolean;
+  tooltipTextExpanded?: string;
+  tooltipTextCollapsed?: string;
 }
 
-function PlannedItem({ icon: Icon, label, isCollapsed }: PlannedItemProps) {
-  const tooltipText = isCollapsed ? `${label} (Coming soon)` : 'Coming in a future week';
+function PlannedItem({
+  icon: Icon,
+  label,
+  isCollapsed,
+  tooltipTextExpanded = 'Coming in a future week',
+  tooltipTextCollapsed = `${label} (Coming soon)`,
+}: PlannedItemProps) {
+  const tooltipText = isCollapsed ? tooltipTextCollapsed : tooltipTextExpanded;
 
   return (
-    <div
-      className="relative flex items-center px-4 py-2.5 my-0.5 group opacity-40 text-[var(--color-secondary)] cursor-default"
-    >
+    <div className="relative flex items-center px-4 py-2.5 my-0.5 group opacity-40 text-[var(--color-secondary)] cursor-default">
       <Icon className="w-4 h-4 flex-shrink-0" />
       <span
-        className={`font-sans text-sm font-medium transition-all duration-200 whitespace-nowrap overflow-hidden ${
-          isCollapsed ? 'max-w-0 opacity-0 ml-0' : 'max-w-[200px] opacity-100 ml-3'
+        className={`font-sans text-xs font-medium transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis ${
+          isCollapsed ? 'max-w-0 opacity-0 ml-0' : 'max-w-[180px] opacity-100 ml-3'
         }`}
       >
         {label}
@@ -91,25 +163,41 @@ function PlannedItem({ icon: Icon, label, isCollapsed }: PlannedItemProps) {
   );
 }
 
-export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
-  const plannedModules = [
-    { label: 'Fixed Income Tools', icon: TrendingUp },
-    { label: 'FX Calculators', icon: Coins },
-    { label: 'Geopolitical Map', icon: Compass },
-    { label: 'Trade Journal', icon: BookOpen },
-    { label: 'Research Library', icon: Archive },
-    { label: 'Correlations', icon: Network },
-  ];
+// ─── Section separator ────────────────────────────────────────────────────────
 
+function SectionSeparator({ label, isCollapsed }: { label: string; isCollapsed: boolean }) {
+  return (
+    <div className={`transition-all duration-200 border-[var(--color-border)]/50 flex-shrink-0 ${
+      isCollapsed ? 'mx-3 my-3 border-t' : 'px-4 pt-3 pb-1 border-t border-transparent'
+    }`}>
+      <span className={`block font-mono text-[10px] tracking-[0.15em] text-[var(--color-secondary)]/40 transition-opacity duration-200 ${
+        isCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'
+      }`}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+// ─── Main Sidebar ─────────────────────────────────────────────────────────────
+
+interface SidebarProps {
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
+}
+
+export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
   return (
     <aside
-      className={`h-screen sticky top-0 flex flex-col justify-between bg-[var(--color-background)] border-r border-[var(--color-border)] select-none overflow-visible transition-[width] duration-200 ease-in-out z-30 ${
-        isCollapsed ? 'w-16' : 'w-60'
+      className={`h-full flex flex-col bg-[var(--color-background)] border-r border-[var(--color-border)] select-none overflow-visible transition-[width] duration-200 ease-in-out z-30 ${
+        isCollapsed ? 'w-16' : 'w-64'
       }`}
     >
-      <div className="flex flex-col min-h-0">
-        {/* Logo Monogram / Wordmark */}
-        <div className="flex items-center px-4 py-4 h-[56px] border-b border-[var(--color-border)]/30 overflow-hidden">
+      {/* ── Scrollable content area — scrollbar hidden, flex-1 fills space ── */}
+      <div className="scrollbar-none flex flex-col flex-1 min-h-0 overflow-y-auto">
+
+        {/* Logo / Wordmark */}
+        <div className="flex items-center px-4 py-4 h-[56px] border-b border-[var(--color-border)]/30 overflow-hidden flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 flex items-center justify-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-sm)] flex-shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-[var(--color-accent)]">
@@ -129,35 +217,55 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
           </div>
         </div>
 
-        {/* Active Modules Group */}
-        <nav className="flex flex-col gap-0.5 p-2 mt-4">
-          <NavItem href="/" icon={LayoutDashboard} label="Markets Dashboard" isCollapsed={isCollapsed} />
-          <NavItem href="/news" icon={Newspaper} label="News Engine" isCollapsed={isCollapsed} />
+        {/* ── Active Modules ── */}
+        <nav className="flex flex-col gap-0.5 p-2 mt-4 flex-shrink-0">
+          {activeItems.map((item) => (
+            <NavItem
+              key={item.href}
+              href={item.href}
+              icon={item.icon}
+              label={item.label}
+              isCollapsed={isCollapsed}
+            />
+          ))}
         </nav>
 
-        {/* Planned Section Header / Separator */}
-        <div className={`transition-all duration-200 border-[var(--color-border)]/50 ${
-          isCollapsed 
-            ? 'mx-3 my-3 border-t' 
-            : 'px-4 pt-4 pb-1.5 border-t border-transparent'
-        }`}>
-          <span className={`block font-mono text-[10px] tracking-[0.15em] text-[var(--color-secondary)]/40 transition-opacity duration-200 ${
-            isCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'
-          }`}>
-            PLANNED
-          </span>
-        </div>
-
-        {/* Planned Modules Group */}
-        <div className="flex flex-col gap-0.5 px-2">
-          {plannedModules.map((item, idx) => (
-            <PlannedItem key={idx} icon={item.icon} label={item.label} isCollapsed={isCollapsed} />
+        {/* ── Coming Soon ── */}
+        <SectionSeparator label="COMING SOON" isCollapsed={isCollapsed} />
+        <div className="flex flex-col gap-0.5 px-2 flex-shrink-0">
+          {comingSoonItems.map((item, idx) => (
+            <PlannedItem
+              key={idx}
+              icon={item.icon}
+              label={item.label}
+              isCollapsed={isCollapsed}
+              tooltipTextExpanded={item.tooltipTextExpanded}
+              tooltipTextCollapsed={item.tooltipTextCollapsed}
+            />
           ))}
         </div>
+
+        {/* ── Planned ── */}
+        <SectionSeparator label="PLANNED" isCollapsed={isCollapsed} />
+        <div className="flex flex-col gap-0.5 px-2 flex-shrink-0">
+          {plannedItems.map((item, idx) => (
+            <PlannedItem
+              key={idx}
+              icon={item.icon}
+              label={item.label}
+              isCollapsed={isCollapsed}
+              tooltipTextExpanded={item.tooltipTextExpanded}
+              tooltipTextCollapsed={item.tooltipTextCollapsed}
+            />
+          ))}
+        </div>
+
+        {/* Push footer to bottom when content is short */}
+        <div className="flex-1" />
       </div>
 
-      {/* Bottom Area: Settings & Collapse Toggle */}
-      <div className="flex flex-col gap-0.5 p-2 border-t border-[var(--color-border)]/30 bg-[var(--color-background)]">
+      {/* ── Pinned footer: Settings + Collapse toggle ── */}
+      <div className="flex-shrink-0 flex flex-col gap-0.5 p-2 border-t border-[var(--color-border)]/30 bg-[var(--color-background)] z-40">
         <NavItem href="/settings" icon={Settings} label="Settings" isCollapsed={isCollapsed} />
         <button
           type="button"
