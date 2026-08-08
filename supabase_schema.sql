@@ -78,6 +78,53 @@ BEGIN
 END
 $$;
 
+-- 5.5 Create calendar_events table
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Identity / dedup
+  fred_release_id text NOT NULL,
+  series_id text,
+  event_name text NOT NULL,
+  country text NOT NULL,
+  category text NOT NULL CHECK (category IN ('inflation','employment','rates','growth','manufacturing')),
+  importance text NOT NULL DEFAULT 'medium' CHECK (importance IN ('high','medium','low')),
+
+  -- Timing
+  release_date date NOT NULL,
+  release_time time,
+  period_covered text,
+
+  -- Values
+  actual_value text,
+  previous_value text,
+  estimated_consensus text,
+  estimate_rationale text,
+  estimate_generated_at timestamptz,
+  estimate_model_used text,
+
+  -- Status
+  status text NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','released','revised')),
+
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_calendar_events_dedup
+  ON calendar_events(fred_release_id, release_date);
+
+CREATE INDEX idx_calendar_events_release_date
+  ON calendar_events(release_date);
+
+CREATE INDEX idx_calendar_events_pending_estimate
+  ON calendar_events(release_date)
+  WHERE estimated_consensus IS NULL AND status = 'scheduled';
+
+ALTER TABLE calendar_events ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public read access" ON calendar_events
+  FOR SELECT USING (true);
+
 -- 6. Pre-Seed Data for the 16-Asset Watchlist
 INSERT INTO assets (symbol, name, asset_class, finnhub_symbol, fred_series_id, eia_series_id) VALUES
 -- Indices (Using liquid US ETF Proxies for live quotes)
