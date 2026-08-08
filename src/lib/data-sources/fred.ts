@@ -13,6 +13,49 @@ export interface FredResult {
   date: Date;    // Date the value was published
 }
 
+interface FredReleaseDate {
+  release_id: number;
+  release_name: string;
+  date: string;
+}
+
+interface FredReleaseDatesResponse {
+  release_dates: FredReleaseDate[];
+}
+
+export interface UpcomingRelease {
+  releaseId: string;
+  releaseName: string;
+  date: string;
+}
+
+export async function fetchUpcomingReleases(startDate: string, endDate: string): Promise<UpcomingRelease[]> {
+  const apiKey = process.env.FRED_API_KEY;
+  if (!apiKey) throw new Error('FRED_API_KEY is not set');
+
+  const url = `https://api.stlouisfed.org/fred/releases/dates?api_key=${apiKey}&file_type=json&include_release_dates_with_no_data=false&sort_order=asc&limit=200`;
+
+  const res = await fetch(url, { cache: 'no-store' });
+
+  if (!res.ok) {
+    throw new Error(`FRED releases failed: HTTP ${res.status}`);
+  }
+
+  const data: FredReleaseDatesResponse = await res.json();
+
+  if (!data.release_dates || data.release_dates.length === 0) {
+    return [];
+  }
+
+  return data.release_dates
+    .filter(entry => entry.date >= startDate && entry.date <= endDate)
+    .map(entry => ({
+      releaseId: String(entry.release_id),
+      releaseName: entry.release_name,
+      date: entry.date,
+    }));
+}
+
 export async function fetchLatestRate(seriesId: string): Promise<FredResult> {
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) throw new Error('FRED_API_KEY is not set');
