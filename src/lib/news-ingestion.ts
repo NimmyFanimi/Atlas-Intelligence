@@ -74,6 +74,7 @@ async function upsertArticles(articles: RawNewsArticle[]): Promise<{ inserted: n
     title: a.title,
     description: a.description,
     url: a.url,
+    image_url: a.imageUrl,
     source: a.source,
     published_at: a.publishedAt,
     sentiment_score: a.sentimentScore,
@@ -86,7 +87,9 @@ async function upsertArticles(articles: RawNewsArticle[]): Promise<{ inserted: n
     .upsert(rows, {
       onConflict: 'marketaux_uuid',
       ignoreDuplicates: true, // don't overwrite existing rows, ai_analysis
-        // may already be populated on a previously-seen article
+        // may already be populated on a previously-seen article.
+        // Existing rows will NOT retroactively receive image_url from this
+        // change; only newly ingested articles will get it.
     })
     .select('id');
 

@@ -30,6 +30,7 @@ interface MarketauxArticle {
   description: string;
   keywords?: string; // comma-separated, useful supplementary signal for macro check
   url: string;
+  image_url?: string | null; // present on some articles, absent on others
   source: string;
   published_at: string;
   entities: MarketauxEntity[];
@@ -44,6 +45,7 @@ export interface RawNewsArticle {
   title: string;
   description: string | null;
   url: string;
+  imageUrl: string | null;
   source: string | null;
   publishedAt: string;
   sentimentScore: number | null;
@@ -165,6 +167,7 @@ export async function fetchMarketauxArticles(
       title: article.title,
       description: description || null,
       url: article.url,
+      imageUrl: article.image_url || null,
       source: article.source || null,
       publishedAt: article.published_at,
       sentimentScore,

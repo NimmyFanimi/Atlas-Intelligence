@@ -25,9 +25,35 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
 -- 3. Create composite index to optimize the "latest snapshot per asset" query
 CREATE INDEX IF NOT EXISTS idx_market_snapshots_asset_time ON market_snapshots(asset_id, timestamp DESC);
 
+-- 3.5 Create news_articles table
+CREATE TABLE IF NOT EXISTS news_articles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  marketaux_uuid text UNIQUE NOT NULL,
+  title text NOT NULL,
+  description text,
+  url text NOT NULL,
+  source text,
+  published_at timestamptz NOT NULL,
+  sentiment_score numeric,
+  matched_asset_ids uuid[] DEFAULT '{}'::uuid[],
+  is_macro boolean DEFAULT false,
+  ai_analysis jsonb,
+  ai_model_used text,
+  -- image_url added after initial table creation
+  image_url text,
+  created_at timestamptz DEFAULT now()
+);
+
+-- GIN index for asset lookups on matched_asset_ids
+CREATE INDEX IF NOT EXISTS idx_news_articles_matched_asset_ids ON news_articles USING gin (matched_asset_ids);
+
+-- Partial index for the phase-2 AI processing queue (rows where ai_analysis IS NULL)
+CREATE INDEX IF NOT EXISTS idx_news_articles_ai_analysis_null ON news_articles(created_at) WHERE ai_analysis IS NULL;
+
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE market_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE news_articles ENABLE ROW LEVEL SECURITY;
 
 -- 5. Create read-only public RLS policies
 DO $$
@@ -42,6 +68,12 @@ BEGIN
     SELECT 1 FROM pg_policies WHERE tablename = 'market_snapshots' AND policyname = 'Allow public read access on market_snapshots'
   ) THEN
     CREATE POLICY "Allow public read access on market_snapshots" ON market_snapshots FOR SELECT USING (true);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'news_articles' AND policyname = 'Allow public read access on news_articles'
+  ) THEN
+    CREATE POLICY "Allow public read access on news_articles" ON news_articles FOR SELECT USING (true);
   END IF;
 END
 $$;
