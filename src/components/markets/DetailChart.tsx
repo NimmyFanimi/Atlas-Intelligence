@@ -1,5 +1,7 @@
 'use client';
 
+import { useMemo } from 'react';
+
 import {
   LineChart,
   Line,
@@ -23,14 +25,6 @@ function parseTimestamp(timestamp: string): Date {
 }
 
 export default function DetailChart({ data, timeframe }: DetailChartProps) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="w-full h-80 flex items-center justify-center text-[var(--color-secondary)] font-mono text-xs">
-        No historical data available
-      </div>
-    );
-  }
-
   const isLongRange = LONG_TIMEFRAMES.has(timeframe);
 
   const formatTime = (tick: string) => {
@@ -47,8 +41,31 @@ export default function DetailChart({ data, timeframe }: DetailChartProps) {
     });
   };
 
+  const dayTicks = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    if (!isLongRange) return null;
+    for (const point of data) {
+      const day = formatDate(point.timestamp);
+      if (!seen.has(day)) {
+        seen.add(day);
+        result.push(point.timestamp);
+      }
+    }
+    return result;
+  }, [data, isLongRange]);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="w-full h-80 flex items-center justify-center text-[var(--color-secondary)] font-mono text-xs">
+        No historical data available
+      </div>
+    );
+  }
+
   const formatAxisTick = (tick: string) => {
-    return isLongRange ? formatDate(tick) : formatTime(tick);
+    if (!isLongRange) return formatTime(tick);
+    return formatDate(tick);
   };
 
   const formatTooltipLabel = (label: string) => {
@@ -84,6 +101,7 @@ export default function DetailChart({ data, timeframe }: DetailChartProps) {
             dataKey="timestamp"
             stroke="var(--color-secondary)"
             fontSize={12}
+            ticks={dayTicks ?? undefined}
             tick={{ style: { fontFamily: 'var(--font-jetbrains-mono)' } }}
             tickFormatter={formatAxisTick}
             minTickGap={8}

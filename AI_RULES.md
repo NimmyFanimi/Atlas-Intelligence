@@ -27,9 +27,9 @@ When editing, make the smallest change that keeps the file accurate, don't rewri
 
 Five modules only:
 1. Markets Dashboard: live and historical prices for a fixed watchlist — **DONE**
-2. News Engine: pulls financial news, AI-summarizes each article, explains why it matters, tags affected assets — **IN PROGRESS (Week 2)**
-3. Morning Brief: daily summary of overnight moves, main driver, today's key risk events
-4. Economic Calendar: upcoming data releases with importance, previous/forecast/actual, plain-English explanation
+2. News Engine: pulls financial news, AI-summarizes each article, explains why it matters, tags affected assets — **DONE**
+3. Morning Brief: daily summary of overnight moves, main driver, today's key risk events — **IN PROGRESS (Week 3)**
+4. Economic Calendar: upcoming data releases with importance, previous/forecast/actual, plain-English explanation — **IN PROGRESS (Week 3)**
 5. Commodities deep-dive: overview, price, supply/demand context, news, for top 5-6 commodities
 
 Everything else (fixed income tools, FX carry calculators, geopolitical map, trade journal, research library, correlations) is OUT OF SCOPE for V1. If a request would expand beyond these five modules, say so explicitly and ask first.
@@ -108,6 +108,8 @@ Rates (US10Y, US2Y) use FRED directly (`DGS10`, `DGS2`), since bond ETF prices d
 
 Composite index on `(asset_id, timestamp DESC)`. RLS enabled: public read-only, no public write. This schema is strictly for market price data; News Engine and Morning Brief get their own tables later, not folded into these two.
 
+**`news_articles` table** (Week 2, time-series, cron-populated): `id` (uuid, PK), `marketaux_uuid` (text, unique, dedup key), `title` (text), `description` (text, nullable), `url` (text), `image_url` (text, nullable — added after initial table creation, existing rows from before this column existed permanently have `image_url = NULL` since upsert uses `ignoreDuplicates: true`), `source` (text, nullable), `published_at` (timestamptz), `sentiment_score` (numeric, nullable — averaged from Marketaux's per-entity scores), `matched_asset_ids` (uuid array, FK-style references into `assets.id`, can be empty), `is_macro` (boolean — independent of `matched_asset_ids`, not mutually exclusive), `ai_analysis` (jsonb: `{what_happened, why_it_matters, trade_read}`, null until phase 2 analysis runs), `ai_model_used` (text, nullable), `created_at`. GIN index on `matched_asset_ids`, partial index on rows where `ai_analysis IS NULL`, public-read RLS matching `assets`/`market_snapshots`. **Note**: this table existed in production before it was correctly tracked in `supabase_schema.sql` (schema drift from initial creation), this has since been fixed retroactively, the file now matches production.
+
 **No SQL/schema changes without explicit permission each time**, even if it seems obviously correct.
 
 ## Known Gaps (deliberate, do not silently "fix")
@@ -115,7 +117,9 @@ Composite index on `(asset_id, timestamp DESC)`. RLS enabled: public read-only, 
 - FRED snapshots have null `change_pct`/`change_abs` by design. Handled in the dashboard UI with an explicit "n/a" fallback, not a bug.
 - No retention/cleanup policy yet for `market_snapshots`.
 - **Historical fix, resolved but worth knowing:** `markets.ts`'s snapshot query originally used ascending order with no explicit `.limit()`, which silently hit Supabase's 1000-row default cap and served data that was stale by up to a day. Fixed by switching to descending order with an explicit limit, then reversing in JS. Any future query touching `market_snapshots` across multiple assets/a wide time window must set an explicit `.limit()` sized to the actual expected row count, never rely on the default cap.
-- News Engine's AI model choice (Gemini 3 Flash vs Groq/Llama 3.3 70B) is not yet locked in as of Week 2 start, pending a live output-quality comparison. See Week 2 itinerary.
+- **Resolved: News Engine's AI model is Gemini 3.6 Flash**, chosen after a live output-quality comparison against Groq/Llama 3.3 70B. Gemini won clearly on analytical depth (real mechanisms, specific cross-asset trade expressions); Groq was competent but leaned generic/restated the article. Confirmed free-tier rate limit: 5 RPM, 250K TPM, observed peak usage ~3 RPM.
+- **Resolved: 30D chart short-window issue was data-maturity, not a bug.** The `market_snapshots` cron only began real production runs ~Aug 4, 2026, so a 30-day query legitimately only had ~4 days of history to return. Resolves itself automatically as history accumulates; revisit only if still truncated by early September 2026.
+- 9 backend security gaps flagged by a Kimi K2.7 proof-of-concept review (non-constant-time cron-route secret comparison on `/api/cron/market-snapshot` specifically — the newer `/api/cron/news-ingest` route already uses `timingSafeEqual` correctly, missing `server-only` guard on the Supabase admin client, API keys in URL query strings, no runtime schema validation on Finnhub/FRED responses, no rate limiting on cron endpoints, no HTTP security headers in `next.config.ts`, error responses leaking config state, GET used for a mutating cron route, public RLS read access). Logged as reference only, not yet actioned.
 
 ## Budget Workarounds (do not undo these to "simplify")
 
@@ -125,7 +129,8 @@ Composite index on `(asset_id, timestamp DESC)`. RLS enabled: public read-only, 
 - FRED calls are gated behind a "already fetched today" check rather than a separate schedule, since FRED only updates once a day.
 - **5-minute cron cadence chosen over 1-minute** specifically to stay within Supabase's 500MB free-tier storage cap across the project's expected year-long lifespan (see Data Sources section above for the math).
 - **Marketaux chosen over Finnhub's news endpoint** for News Engine: free tier easily covers actual usage (news polling doesn't need high frequency), and its built-in entity-tagging + sentiment scoring removes the need to build that logic from scratch.
-- **Claude's API was ruled out for News Engine's AI layer** despite being the most thematically fitting choice, because it has no ongoing free tier (only a one-time ~$5 trial credit), which conflicts with the £0 budget. Gemini 3 Flash and Groq (Llama 3.3 70B) are the two free-tier candidates under live evaluation instead.
+- **Claude's API was ruled out for News Engine's AI layer** despite being the most thematically fitting choice, because it has no ongoing free tier (only a one-time ~$5 trial credit), which conflicts with the £0 budget. **Resolved: Gemini 3.6 Flash chosen** over Groq/Llama 3.3 70B after a live output-quality comparison (see Known Gaps).
+- **News ingestion capped at `MAX_ARTICLES_PER_RUN=2` with `DELAY_BETWEEN_CALLS_MS=800`**, specifically to fit inside cron-job.org's hard 30-second free-tier timeout, after real production timeout failures at higher throughput. News cron runs every 2 hours, not 5 minutes like market snapshots, since news doesn't need price-like freshness and Marketaux's free tier is ~100 requests/day.
 
 ## Design Language (hard rules, violating these means starting over)
 
@@ -158,6 +163,12 @@ A 4-tier text hierarchy is established and should be followed for any new UI: **
 
 **Tailwind v4 note:** no `tailwind.config.ts`, tokens live in CSS via `@theme`. No global `background-image: none` CSS lock, gradient avoidance is enforced through code discipline instead.
 
+**News Engine detail view uses a full-screen modal overlay (page blurred + dimmed behind it), not a side panel — this is intentional and permanent, do not "fix" it to match the Markets Dashboard.** The two modules deliberately use different detail-view interaction patterns: Markets Dashboard keeps its right-column side panel because cross-referencing a chart against the watchlist benefits from staying visible; News Engine uses a modal because reading an analyst note is a focused single-item task that benefits from full attention. Do not unify these without being explicitly asked.
+
+**The News Engine's sentiment gauge is officially named the "Sentimeter"** (needle-and-arc gauge, -1 to +1 scale, exact numeric readout centered beneath the needle). Use this name in code, UI copy, and docs, not generic terms like "sentiment gauge." It only appears in the News Engine modal, not on the smaller card (removed from the card, illegible at that size). Teal only for the arc fill (dim-to-bright gradient), never sage/coral, never a traffic-light gradient.
+
+**News card/modal image fallback (when `image_url` is null) uses a 5-color palette keyed to asset class**, not a flat teal-only fill: teal=indices, purple=FX, pink=rates, coral=commodities, gray=macro-only/no matched asset. Same family as existing design tokens, no clashing new hues.
+
 ## Working Habits
 
 1. Verify technical claims against the real API/service before locking anything in, don't trust a confident-sounding claim at face value.
@@ -174,18 +185,17 @@ A 4-tier text hierarchy is established and should be followed for any new UI: **
 
 ## Timeline
 
-As of 2026-08-01: **Week 1 is complete.** Markets Dashboard is fully built, polished, and deployed: watchlist sections, list/carousel toggle, summary stats row, detail panel with a working 1H/12H/1D/7D/30D timeframe selector, full typography/spacing/interaction polish pass done. Week 2 (News Engine) has started planning: news source, tagging approach, and the general AI-model shortlist are decided, final AI model pending a live quality comparison.
+As of 2026-08-08: **Week 1 and Week 2 are both complete.** Markets Dashboard: fully built, polished, deployed, and its one parked bug (30D chart duplicate/missing axis labels) fixed and verified in-browser. News Engine: backend, full UI build, and a full visual redesign pass (modal detail view, Sentimeter, asset-class fallback palette, chevron navigation) all done and verified in-browser. Week 3 (Morning Brief + Economic Calendar) starting now.
 
 ## Itinerary (current source of truth, supersedes any flat list)
 
-**Week 1: DONE.** Markets Dashboard fully working, polished, and deployed.
+**Week 1: DONE.** Markets Dashboard fully working, polished, and deployed. Parked 30D chart bug resolved (see Known Gaps).
 
-**Week 2 (in progress):** News Engine.
-- News source: Marketaux (locked in), not Finnhub's news endpoint. Ingest both watchlist-tagged articles and broader macro/market news.
-- AI summarization/"why it matters"/asset tagging: asset tagging comes largely for free from Marketaux's entity tagging. AI model for summarization is undecided between Gemini 3 Flash and Groq's Llama 3.3 70B, pending a live side-by-side test with a carefully engineered analyst-style prompt (requirement: output must read like a thoughtful junior analyst's genuine analysis, not a generic AI recap; this is a hard quality bar and both candidate models are a real step down from frontier-tier reasoning, so prompt engineering effort matters here).
-- UI: needs the same level of aesthetic care and iteration as Week 1's Markets Dashboard required, budget real design-review time, don't treat visual polish as a final pass tacked on at the end.
-- This is the first AI integration, scheduled early deliberately since it's the riskiest unbuilt piece.
+**Week 2: DONE.** News Engine fully built and redesigned.
+- Backend: Marketaux ingestion, Gemini 3.6 Flash analysis, two-phase cron pipeline, all verified live in production.
+- UI: card, modal detail view (converted from an initial side-panel build to a full-screen blurred/dimmed modal overlay after in-browser review), Sentimeter (renamed from "sentiment gauge," needle-and-arc redesign), 5-color asset-class fallback palette, Unified/Split feed views, prev/next chevron navigation between articles. See Design Language section for the permanent modal-vs-side-panel design fork and Sentimeter naming rule.
+- Workflow established here, worth reusing for future significant UI work: build an interactive HTML mockup with real Atlas tokens first, iterate directly with the user, get sign-off, then translate into a detailed OpenCode prompt with the mockup attached, rather than describing target visuals in prose alone.
 
-**Week 3:** Morning Brief (AI-generated daily summary). Economic Calendar (data, UI, plain-English explanations). Note: a Palantir-style causal-chain presentation idea and an "AI Observation" panel style (short analytical takes with confidence scores) were suggested externally during Week 1 and parked as relevant to News Engine/this module, worth revisiting here rather than building from scratch.
+**Week 3 (starting now):** Morning Brief (AI-generated daily summary). Economic Calendar (data, UI, plain-English explanations). Not yet scoped in detail as of this update, scoping is the first task. Note: a Palantir-style causal-chain presentation idea and an "AI Observation" panel style (short analytical takes with confidence scores) were suggested externally during Week 1 and parked as relevant to News Engine/this module, worth revisiting here rather than building from scratch.
 
 **Week 4:** Commodities deep-dive (per-commodity pages, top 5-6) → full pre-commit bug pass → cross-browser/mobile check → README finalized → remove dev-only pages before recruiter visibility → buffer.
