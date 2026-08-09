@@ -33,7 +33,7 @@ export async function fetchNextReleaseDate(releaseId: string): Promise<UpcomingR
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) throw new Error('FRED_API_KEY is not set');
 
-  const url = `https://api.stlouisfed.org/fred/releases/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=5`;
+  const url = `https://api.stlouisfed.org/fred/release/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=5`;
 
   const res = await fetch(url, { cache: 'no-store' });
 
