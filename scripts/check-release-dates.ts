@@ -13,9 +13,12 @@
 //
 // Run: npx tsx scripts/check-release-dates.ts
 // (Reads FRED_API_KEY from the environment, sourced from .env.local via
-// the dotenv import below.)
+// the dotenv import below — .env.local is loaded explicitly, NOT the
+// default .env, since that's this project's actual environment file and
+// plain `import 'dotenv/config'` would silently read only .env.)
 
-import 'dotenv/config';
+import { config } from 'dotenv';
+config({ path: '.env.local' });
 import { TRACKED_RELEASES } from '../src/lib/data-sources/tracked-releases';
 
 async function main() {
