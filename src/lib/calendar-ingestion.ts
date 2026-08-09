@@ -1,10 +1,15 @@
 // lib/calendar-ingestion.ts
 //
-// Ingestion for the Economic Calendar module. Pulls the FRED release
-// schedule over the next 14 days, filters it down to the curated
-// TRACKED_RELEASES allowlist (FRED has no importance/category metadata
-// of its own, so it is supplied here), and upserts the matched events
-// into calendar_events.
+// Ingestion for the Economic Calendar module. For each curated
+// TRACKED_RELEASES entry, looks up the next upcoming FRED release date
+// individually and upserts matched events into calendar_events.
+//
+// Each tracked release is looked up individually because FRED's
+// releases/dates endpoint, when called without a release_id, returns its
+// full multi-thousand-entry catalog ordered arbitrarily rather than scoped
+// near today — so a targeted per-release call is required for correctness.
+// FRED has no importance/category metadata of its own, so that is supplied
+// here via TRACKED_RELEASES.
 //
 // Only identity/scheduling fields are populated on insert — actual_value,
 // previous_value, estimated_consensus, estimate_rationale,
@@ -18,10 +23,8 @@
 // market-snapshot cron route already uses. Do not create a second one.
 
 import { supabaseAdmin } from './supabase/admin';
-import { fetchUpcomingReleases } from './data-sources/fred';
+import { fetchNextReleaseDate } from './data-sources/fred';
 import { TRACKED_RELEASES } from './data-sources/tracked-releases';
-
-const CALENDAR_WINDOW_DAYS = 14;
 
 interface CalendarEventRow {
   fred_release_id: string;
@@ -61,14 +64,15 @@ async function upsertCalendarEvents(rows: CalendarEventRow[]): Promise<{ inserte
 }
 
 /**
- * Fetches the FRED release schedule for the next 14 days, filters it to
- * the TRACKED_RELEASES allowlist, and upserts matched events into
+ * For each TRACKED_RELEASES entry, looks up the next upcoming FRED
+ * release date individually and upserts matched events into
  * calendar_events.
  *
- * Per-entry failures are isolated: one entry failing to build is logged
- * and skipped rather than aborting the run. A failure in the single
- * fetchUpcomingReleases call itself propagates as a thrown error, since
- * without that call succeeding there is nothing to process.
+ * Per-entry isolation: a null result (no upcoming date found in the
+ * recent slice) is a silent skip that is neither counted nor recorded.
+ * Any error thrown by an individual lookup is logged, counted, and
+ * recorded in `errors`, then processing continues with the next
+ * tracked release.
  */
 export async function ingestUpcomingCalendarEvents(): Promise<{
   matched: number;
@@ -76,36 +80,21 @@ export async function ingestUpcomingCalendarEvents(): Promise<{
   skipped: number;
   errors: string[];
 }> {
-  const trackedById = new Map(TRACKED_RELEASES.map(r => [r.releaseId, r]));
-
-  const today = new Date();
-  const startDate = today.toISOString().slice(0, 10); // 'YYYY-MM-DD'
-  const endDate = new Date(today.getTime() + CALENDAR_WINDOW_DAYS * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-
-  // A failure here is a hard failure — nothing to process without it.
-  const releases = await fetchUpcomingReleases(startDate, endDate);
-
-  const matchedReleases = releases.filter(r => trackedById.has(r.releaseId));
-
   const rows: CalendarEventRow[] = [];
   const errors: string[] = [];
   let skipped = 0;
 
-  for (const release of matchedReleases) {
+  for (const tracked of TRACKED_RELEASES) {
     try {
-      const tracked = trackedById.get(release.releaseId);
-      if (!tracked) {
-        throw new Error(`No TRACKED_RELEASES entry for releaseId ${release.releaseId}`);
-      }
-      if (!release.date) {
-        throw new Error(`Missing release date for ${release.releaseId}`);
+      const upcoming = await fetchNextReleaseDate(tracked.releaseId);
+
+      if (upcoming === null) {
+        continue;
       }
 
       rows.push({
-        fred_release_id: release.releaseId,
-        release_date: release.date,
+        fred_release_id: tracked.releaseId,
+        release_date: upcoming.date,
         event_name: tracked.eventName,
         category: tracked.category,
         importance: tracked.importance,
@@ -114,7 +103,7 @@ export async function ingestUpcomingCalendarEvents(): Promise<{
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(
-        `calendar-ingestion: skipping entry for release ${release.releaseId}: ${message}`
+        `calendar-ingestion: error looking up next release date for release ${tracked.releaseId}: ${message}`
       );
       skipped += 1;
       errors.push(message);
@@ -123,5 +112,5 @@ export async function ingestUpcomingCalendarEvents(): Promise<{
 
   const { inserted } = await upsertCalendarEvents(rows);
 
-  return { matched: matchedReleases.length, inserted, skipped, errors };
+  return { matched: rows.length, inserted, skipped, errors };
 }
