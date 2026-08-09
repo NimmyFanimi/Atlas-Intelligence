@@ -29,31 +29,31 @@ export interface UpcomingRelease {
   date: string;
 }
 
-export async function fetchUpcomingReleases(startDate: string, endDate: string): Promise<UpcomingRelease[]> {
+export async function fetchNextReleaseDate(releaseId: string): Promise<UpcomingRelease | null> {
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) throw new Error('FRED_API_KEY is not set');
 
-  const url = `https://api.stlouisfed.org/fred/releases/dates?api_key=${apiKey}&file_type=json&include_release_dates_with_no_data=false&sort_order=asc&limit=200`;
+  const url = `https://api.stlouisfed.org/fred/releases/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=5`;
 
   const res = await fetch(url, { cache: 'no-store' });
 
   if (!res.ok) {
-    throw new Error(`FRED releases failed: HTTP ${res.status}`);
+    throw new Error(`FRED release ${releaseId} dates failed: HTTP ${res.status}`);
   }
 
   const data: FredReleaseDatesResponse = await res.json();
 
-  if (!data.release_dates || data.release_dates.length === 0) {
-    return [];
-  }
+  const today = new Date().toISOString().slice(0, 10);
 
-  return data.release_dates
-    .filter(entry => entry.date >= startDate && entry.date <= endDate)
-    .map(entry => ({
-      releaseId: String(entry.release_id),
-      releaseName: entry.release_name,
-      date: entry.date,
-    }));
+  const entry = (data.release_dates || []).find(item => item.date >= today);
+
+  if (!entry) return null;
+
+  return {
+    releaseId: String(entry.release_id),
+    releaseName: entry.release_name,
+    date: entry.date,
+  };
 }
 
 export async function fetchLatestRate(seriesId: string): Promise<FredResult> {
