@@ -164,6 +164,8 @@ GIN index on `matched_asset_ids` (fast "articles matching this asset" queries), 
 - `src/lib/data/marketHistory.ts` — client-side fetch (`fetchMarketHistory`) powering the detail panel's timeframe selector (1H/12H/1D/7D/30D). Uses the anon/public client since it runs in the browser (confirmed RLS allows public read on `market_snapshots`). Downsamples 7D/30D results to ~120 points in JS after fetching, to keep chart rendering fast. Per-timeframe `.limit()` values were tuned twice: an initial pass under-provisioned 7D/30D (only actually covering the most recent ~17 days at a "30D" label, a real bug caught by checking actual chart output against expectations), corrected to 4000 (7D) and 15000 (30D), sized with roughly 1.7-2x headroom over the exact row count expected at 5-minute cadence. **These limits are cadence-dependent and must be recalculated if cron frequency ever changes.**
 - `src/components/markets/MarketsDashboard.tsx`, `AssetSparkline.tsx`, `DetailChart.tsx` — the dashboard's UI components (sections grouped by asset class, cards/list view toggle, summary stat row, detail panel with the timeframe selector).
 
+- `scripts/check-release-dates.ts` — diagnostic script that hits FRED's `release/dates` endpoint per TRACKED_RELEASES entry to confirm whether a date has been published yet (run: `npx tsx scripts/check-release-dates.ts`); helps distinguish "real ingestion bug" from "FRED hasn't published a date yet" during reporting disruptions/government shutdowns.
+
 ## Environment Variables (in `.env.local`, values filled in manually, never pasted into chat)
 
 - `FINNHUB_API_KEY`
