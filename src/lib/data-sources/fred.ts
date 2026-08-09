@@ -33,7 +33,15 @@ export async function fetchNextReleaseDate(releaseId: string): Promise<UpcomingR
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) throw new Error('FRED_API_KEY is not set');
 
-  const url = `https://api.stlouisfed.org/fred/release/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=5`;
+  // FRED's fred/release/dates endpoint returns a release's full historical
+  // date list. With sort_order=desc and a small limit, only the most recent
+  // PAST dates are returned, no future dates are captured unless the release
+  // happens to have already published something very close to today. With
+  // sort_order=asc and a large limit, the list is walked from oldest to
+  // newest, so the existing .find(item => item.date >= today) logic
+  // correctly reaches and returns the first genuinely upcoming date,
+  // regardless of how far in the future it is.
+  const url = `https://api.stlouisfed.org/fred/release/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=asc&limit=1000`;
 
   const res = await fetch(url, { cache: 'no-store' });
 
