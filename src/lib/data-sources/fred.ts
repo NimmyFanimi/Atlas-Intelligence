@@ -34,14 +34,13 @@ export async function fetchNextReleaseDate(releaseId: string): Promise<UpcomingR
   if (!apiKey) throw new Error('FRED_API_KEY is not set');
 
   // FRED's fred/release/dates endpoint returns a release's full historical
-  // date list. With sort_order=desc and a small limit, only the most recent
-  // PAST dates are returned, no future dates are captured unless the release
-  // happens to have already published something very close to today. With
-  // sort_order=asc and a large limit, the list is walked from oldest to
-  // newest, so the existing .find(item => item.date >= today) logic
-  // correctly reaches and returns the first genuinely upcoming date,
-  // regardless of how far in the future it is.
-  const url = `https://api.stlouisfed.org/fred/release/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=asc&limit=1000`;
+  // date list. Use sort_order=desc with a small limit: the newest entries are
+  // returned first, which safely captures any future-dated entries near today
+  // without needing a limit large enough to walk the entire history. A fixed
+  // ascending limit (e.g. 1000) would eventually be insufficient for releases
+  // with very large histories (e.g. FOMC Press Release, release_id 101, has
+  // 3748 dated entries), so we must not rely on that.
+  const url = `https://api.stlouisfed.org/fred/release/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=20`;
 
   const res = await fetch(url, { cache: 'no-store' });
 
@@ -53,9 +52,15 @@ export async function fetchNextReleaseDate(releaseId: string): Promise<UpcomingR
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const entry = (data.release_dates || []).find(item => item.date >= today);
+  // Filter down to only future-dated (date >= today) entries. Because the
+  // response is sorted descending (newest first), this filtered array stays in
+  // descending order, so the correct "next upcoming" date is the LAST entry —
+  // the earliest (soonest) of the future-dated ones — not the first.
+  const upcoming = (data.release_dates || []).filter(item => item.date >= today);
 
-  if (!entry) return null;
+  if (upcoming.length === 0) return null;
+
+  const entry = upcoming[upcoming.length - 1];
 
   return {
     releaseId: String(entry.release_id),
