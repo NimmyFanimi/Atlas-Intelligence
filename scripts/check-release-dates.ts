@@ -42,7 +42,7 @@ async function main() {
       const res = await fetch(url, { cache: 'no-store' });
 
       if (!res.ok) {
-        console.log(`${tracked.eventName} (${tracked.releaseId}): ERROR — HTTP ${res.status}`);
+        console.log(`${tracked.primaryName} (${tracked.releaseId}): ERROR — HTTP ${res.status}`);
         continue;
       }
 
@@ -65,18 +65,18 @@ async function main() {
 
       if (upcoming) {
         console.log(
-          `${tracked.eventName} (${tracked.releaseId}): next upcoming = ${upcoming.date}` +
+          `${tracked.primaryName} (${tracked.releaseId}): next upcoming = ${upcoming.date}` +
           (mostRecent ? `, most recent on record = ${mostRecent}` : '')
         );
       } else {
         console.log(
-          `${tracked.eventName} (${tracked.releaseId}): NO UPCOMING DATE FOUND` +
+          `${tracked.primaryName} (${tracked.releaseId}): NO UPCOMING DATE FOUND` +
           (mostRecent ? ` (most recent on record: ${mostRecent})` : ' (no dates on record)')
         );
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.log(`${tracked.eventName} (${tracked.releaseId}): ERROR — ${message}`);
+      console.log(`${tracked.primaryName} (${tracked.releaseId}): ERROR — ${message}`);
     }
 
     // Courtesy delay between calls (not driven by a known rate limit)

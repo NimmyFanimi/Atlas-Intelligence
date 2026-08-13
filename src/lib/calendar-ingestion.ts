@@ -95,7 +95,7 @@ export async function ingestUpcomingCalendarEvents(): Promise<{
       rows.push({
         fred_release_id: tracked.releaseId,
         release_date: upcoming.date,
-        event_name: tracked.eventName,
+        event_name: tracked.primaryName,
         category: tracked.category,
         importance: tracked.importance,
         country: tracked.country,

@@ -6,16 +6,17 @@
 
 export interface TrackedRelease {
   releaseId: string;
-  eventName: string;
+  primaryName: string;
+  secondaryName: string;
   category: 'inflation' | 'employment' | 'rates' | 'growth' | 'manufacturing';
   importance: 'high' | 'medium' | 'low';
   country: string;
 }
 
 export const TRACKED_RELEASES: TrackedRelease[] = [
-  { releaseId: '10',  eventName: 'US CPI (Consumer Price Index)',    category: 'inflation',  importance: 'high', country: 'US' },
-  { releaseId: '50',  eventName: 'US Employment Situation (NFP)',     category: 'employment', importance: 'high', country: 'US' },
-  { releaseId: '53',  eventName: 'US GDP (Gross Domestic Product)',   category: 'growth',     importance: 'high', country: 'US' },
-  { releaseId: '54',  eventName: 'US Personal Income & Outlays (PCE)', category: 'inflation', importance: 'high', country: 'US' },
-  { releaseId: '101', eventName: 'FOMC Press Release',                category: 'rates',      importance: 'high', country: 'US' },
+  { releaseId: '10',  primaryName: 'US CPI',             secondaryName: 'Consumer Price Index',          category: 'inflation',  importance: 'high', country: 'US' },
+  { releaseId: '50',  primaryName: 'US NFP',             secondaryName: 'Employment Situation',           category: 'employment', importance: 'high', country: 'US' },
+  { releaseId: '53',  primaryName: 'US GDP',             secondaryName: 'Gross Domestic Product',         category: 'growth',     importance: 'high', country: 'US' },
+  { releaseId: '54',  primaryName: 'US PCE',             secondaryName: 'Personal Income & Outlays',      category: 'inflation',  importance: 'high', country: 'US' },
+  { releaseId: '101', primaryName: 'FOMC Press Release', secondaryName: 'Federal Reserve rate decision', category: 'rates',      importance: 'high', country: 'US' },
 ];
