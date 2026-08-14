@@ -53,11 +53,10 @@ const NAV_ITEMS: NavDef[] = [
     tooltipTextCollapsed: 'Morning Brief (Week 3)',
   },
   {
-    kind: 'coming-soon',
+    kind: 'active',
+    href: '/calendar',
     icon: Calendar,
     label: 'Economic Calendar',
-    tooltipTextExpanded:  'Coming in Week 3',
-    tooltipTextCollapsed: 'Economic Calendar (Week 3)',
   },
   {
     kind: 'coming-soon',
