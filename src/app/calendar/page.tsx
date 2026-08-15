@@ -37,8 +37,9 @@ export default async function CalendarPage() {
 
   const displayDays = windowDays.filter((d) => d.events.length > 0);
 
-  // Next event: the single earliest-dated row in calendar_events (if any exist)
-  const nextEvent = allEvents[0] || null;
+  // Next event: earliest row in calendar_events whose release_date is today or later (UTC).
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const nextEvent = allEvents.find((event) => event.release_date >= todayStr) ?? null;
 
   // TBD tracked releases: those with NO row in calendar_events at all
   const tbdReleases = TRACKED_RELEASES.filter(
