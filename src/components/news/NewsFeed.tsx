@@ -240,7 +240,7 @@ export default function NewsFeed({ data }: NewsFeedProps) {
   );
 
   return (
-    <div className="relative p-4 flex-1 bg-[var(--color-background)] overflow-x-hidden">
+    <div className="relative p-4 flex-1 bg-[var(--color-background)] overflow-x-hidden scrollbar-none">
       {!data ? (
         // loading state
         <div className="flex items-center justify-center h-48 text-[var(--color-secondary)] font-mono text-xs">
