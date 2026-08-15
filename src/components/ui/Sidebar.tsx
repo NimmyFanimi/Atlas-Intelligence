@@ -102,9 +102,9 @@ function NavItem({ href, icon: Icon, label, isCollapsed }: NavItemProps) {
   return (
     <Link
       href={href}
-      className={`relative flex items-center px-4 py-2.5 my-0.5 group transition-all duration-150 rounded-[var(--radius-sm)] border border-transparent ${
+      className={`relative flex items-center px-4 py-2.5 my-0.5 group transition-all duration-150 rounded-[var(--radius-sm)] border border-transparent outline-none ${
         isActive
-          ? 'bg-[var(--color-surface)] border-[var(--color-border)]/40 text-[var(--color-primary)] font-semibold'
+          ? 'bg-[var(--color-surface)] text-[var(--color-primary)] font-semibold'
           : 'text-[var(--color-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-surface)]/50'
       }`}
     >

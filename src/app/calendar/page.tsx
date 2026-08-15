@@ -36,6 +36,18 @@ export default async function CalendarPage() {
     });
   }
 
+  let lastEventDayIndex = -1;
+  for (let i = windowDays.length - 1; i >= 0; i--) {
+    if (windowDays[i].events.length > 0) {
+      lastEventDayIndex = i;
+      break;
+    }
+  }
+
+  const displayDays = lastEventDayIndex !== -1 
+    ? windowDays.slice(0, lastEventDayIndex + 1)
+    : windowDays;
+
   // Next event: the single earliest-dated row in calendar_events (if any exist)
   const nextEvent = allEvents[0] || null;
 
@@ -46,7 +58,7 @@ export default async function CalendarPage() {
 
   return (
     <CalendarView
-      groupedDays={windowDays}
+      groupedDays={displayDays}
       tbdReleases={tbdReleases}
       nextEvent={nextEvent}
     />
