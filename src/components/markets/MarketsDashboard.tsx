@@ -413,7 +413,7 @@ export default function MarketsDashboard({ data }: { data: MarketsDashboardData 
   const { biggestMover, mostVolatile, breadth, totalAssets } = data.summary;
 
   return (
-    <div className="min-h-screen bg-[var(--color-background)] overflow-x-hidden">
+    <div className="min-h-screen bg-[var(--color-background)] overflow-x-hidden scrollbar-none">
       <style>{`
         .carousel-scroll {
           scrollbar-width: none;
