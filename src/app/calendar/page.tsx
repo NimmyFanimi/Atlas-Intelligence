@@ -16,37 +16,26 @@ export default async function CalendarPage() {
 
   const allEvents = events ?? [];
 
-  // Compute a fixed 7-day window starting from today (today through 6 days ahead)
+  // Build a 7-day window starting from today, then keep only days that have events.
   const windowDays = [];
   const baseDate = new Date();
-  
+
   for (let i = 0; i < 7; i++) {
     const d = new Date(baseDate);
     d.setUTCDate(baseDate.getUTCDate() + i);
     const dateStr = d.toISOString().slice(0, 10);
-    
-    // Group events that fall on this day
+
     const dayEvents = allEvents.filter(
       (event) => event.release_date === dateStr
     );
-    
+
     windowDays.push({
       date: dateStr,
       events: dayEvents,
     });
   }
 
-  let lastEventDayIndex = -1;
-  for (let i = windowDays.length - 1; i >= 0; i--) {
-    if (windowDays[i].events.length > 0) {
-      lastEventDayIndex = i;
-      break;
-    }
-  }
-
-  const displayDays = lastEventDayIndex !== -1 
-    ? windowDays.slice(0, lastEventDayIndex + 1)
-    : windowDays;
+  const displayDays = windowDays.filter((d) => d.events.length > 0);
 
   // Next event: the single earliest-dated row in calendar_events (if any exist)
   const nextEvent = allEvents[0] || null;

@@ -129,27 +129,33 @@ export default function CalendarView({
         )}
       </div>
 
-      {groupedDays.map((group) => {
-        const { weekday, monthDay } = formatDayLabel(group.date);
-        return (
-          <div key={group.date} className="mb-2">
-            <div className="flex items-baseline gap-2.5 pb-3 pt-4 px-[2px]">
-              <span className="text-xs font-medium text-[var(--color-secondary)]">{weekday}</span>
-              <span className="text-[11px] font-mono text-[var(--color-secondary)]/70">{monthDay}</span>
-            </div>
-            
-            {group.events.length > 0 ? (
-              group.events.map((event) => (
-                <EventCard key={event.id} event={event} />
-              ))
-            ) : (
-              <div className="text-[13px] text-[var(--color-secondary)]/50 px-4 py-2">
-                No releases
+      {groupedDays.length === 0 ? (
+        <div className="text-[13px] text-[var(--color-secondary)]/50 px-[2px] py-2">
+          No confirmed releases this week
+        </div>
+      ) : (
+        groupedDays.map((group) => {
+          const { weekday, monthDay } = formatDayLabel(group.date);
+          return (
+            <div key={group.date} className="mb-2">
+              <div className="flex items-baseline gap-2.5 pb-3 pt-4 px-[2px]">
+                <span className="text-xs font-medium text-[var(--color-secondary)]">{weekday}</span>
+                <span className="text-[11px] font-mono text-[var(--color-secondary)]/70">{monthDay}</span>
               </div>
-            )}
-          </div>
-        );
-      })}
+
+              {group.events.length > 0 ? (
+                group.events.map((event) => (
+                  <EventCard key={event.id} event={event} />
+                ))
+              ) : (
+                <div className="text-[13px] text-[var(--color-secondary)]/50 px-4 py-2">
+                  No releases
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
 
       {tbdReleases.length > 0 && (
         <div className="mt-8">
