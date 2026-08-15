@@ -270,7 +270,7 @@ export default function NewsFeed({ data }: NewsFeedProps) {
               between the blurred page and the modal panel */}
           {selectedArticle && (
             <div
-              className="fixed inset-0 z-50 overflow-y-auto"
+              className="fixed inset-0 z-50 overflow-y-auto scrollbar-none"
               style={{ backgroundColor: 'rgba(6,7,8,0.72)' }}
               onClick={closeModal}
               role="dialog"
