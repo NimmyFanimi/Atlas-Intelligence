@@ -125,6 +125,25 @@ ALTER TABLE calendar_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public read access" ON calendar_events
   FOR SELECT USING (true);
 
+-- 5.6 Create morning_briefs table
+CREATE TABLE IF NOT EXISTS morning_briefs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  brief_date date NOT NULL UNIQUE,
+  content text NOT NULL,
+  movers_data jsonb NOT NULL,
+  ai_model_used text NOT NULL,
+  generated_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_morning_briefs_brief_date
+  ON morning_briefs(brief_date DESC);
+
+ALTER TABLE morning_briefs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read access on morning_briefs" ON morning_briefs
+  FOR SELECT USING (true);
+
 -- 6. Pre-Seed Data for the 16-Asset Watchlist
 INSERT INTO assets (symbol, name, asset_class, finnhub_symbol, fred_series_id, eia_series_id) VALUES
 -- Indices (Using liquid US ETF Proxies for live quotes)
