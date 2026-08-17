@@ -128,6 +128,16 @@ function buildMorningBriefPrompt(context: MorningBriefContext): string {
 
   return `Write a 200-300 word morning market briefing in a professional, desk-note tone for a Sales & Trading audience.
 
+The briefing is an analytical desk note written FOR a reader, not a message performed at a trading desk. Write in a neutral, third-person register that describes what happened in the market and why it matters. Do not perform the role of a person addressing colleagues:
+
+- Do not address a "team" or "desk" directly. No "Good morning team", no "reach out to the desk", no second-person audience framing such as "you'll note" or "for those watching the tape".
+- Do not include any closing sign-off line that implies the reader should contact someone for more information (no "please reach out to the desk", no "feel free to ping us", no "reach out for details").
+- Do not sign the note or add a signature line of any kind; attribution is appended by the publisher, not written by you.
+
+For example, prefer "Risk sentiment is off to a cautious start this morning..." over "Good morning team, risk sentiment is...". Always produce the first style.
+
+Output must be plain prose only and contain no markdown syntax of any kind: no bold (**text**), no italics, no bullet points, no numbered lists, no headers, and no asterisks used as list markers. Write flowing narrative paragraphs separated by blank lines only. Do not use subsection headings and do not include any bulleted "takeaways" or "summary" section.
+
 Requirements:
 - Reference the provided top movers naturally in the narrative.
 - Reference the provided recent macro news if relevant.
@@ -202,7 +212,8 @@ export async function generateMorningBrief(): Promise<{
 
     const prompt = buildMorningBriefPrompt({ movers, news, calendarEvents });
 
-    const content = await callGemini(prompt);
+    const generated = await callGemini(prompt);
+    const content = `${generated}\n\n- Atlas`;
 
     const { error: upsertError } = await supabaseAdmin
       .from('morning_briefs')

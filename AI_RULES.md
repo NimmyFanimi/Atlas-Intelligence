@@ -28,8 +28,8 @@ When editing, make the smallest change that keeps the file accurate, don't rewri
 Five modules only:
 1. Markets Dashboard: live and historical prices for a fixed watchlist — **DONE**
 2. News Engine: pulls financial news, AI-summarizes each article, explains why it matters, tags affected assets — **DONE**
-3. Morning Brief: daily summary of overnight moves, main driver, today's key risk events — **IN PROGRESS (Week 3)**
-4. Economic Calendar: upcoming data releases with importance, previous/forecast/actual, plain-English explanation — **IN PROGRESS (Week 3)**
+3. Morning Brief: daily summary of overnight moves, main driver, today's key risk events — **BACKEND DONE (Week 3), frontend + cron route NOT yet built**
+4. Economic Calendar: upcoming data releases with importance, previous/forecast/actual, plain-English explanation — **DONE (Week 3)**
 5. Commodities deep-dive: overview, price, supply/demand context, news, for top 5-6 commodities
 
 Everything else (fixed income tools, FX carry calculators, geopolitical map, trade journal, research library, correlations) is OUT OF SCOPE for V1. If a request would expand beyond these five modules, say so explicitly and ask first.
@@ -52,8 +52,8 @@ Everything else (fixed income tools, FX carry calculators, geopolitical map, tra
 
 ## Data Sources and Critical Technical Constraints
 
-- FRED: macro/rates data, end-of-day only
-- Finnhub: quotes, calendar, free tier caps at 60 calls/minute
+- FRED: macro/rates data, end-of-day only. **For release dates (Economic Calendar), use the SINGULAR `fred/release/dates?release_id=X` endpoint, never the plural `fred/releases/dates`** — the plural endpoint ignores the `release_id` filter entirely and returns FRED's full ~5600-entry catalog regardless of what's requested. Use `sort_order=desc&limit=20`, filter to `date >= today`, take the LAST entry in that filtered array (not the first — a fixed ascending limit fails for high-frequency releases like FOMC, which has 3748 total historical entries). See `fetchNextReleaseDate` in `fred.ts`.
+- Finnhub: quotes, **calendar endpoint confirmed PAID-ONLY via live 403 test, do not use for Economic Calendar**, free tier caps at 60 calls/minute for the endpoints that do work
 - EIA: energy fundamentals (not yet wired in)
 - **Marketaux**: News Engine's news source (locked in Week 2 planning). Free tier ~100 requests/day. Provides built-in entity/ticker tagging and sentiment scoring per article, ingestion should query `/news/all` filtered by watchlist symbols AND separately pull broader macro/market news even without a direct ticker match (Fed decisions, geopolitical events often explain multi-asset moves and must not be filtered out).
 
@@ -88,7 +88,11 @@ Rates (US10Y, US2Y) use FRED directly (`DGS10`, `DGS2`), since bond ETF prices d
 
 ## Existing File Structure (check before creating new files, don't duplicate)
 
-- `src/lib/data-sources/` — one file per external API: `finnhub.ts` (`fetchQuote`), `fred.ts` (`fetchLatestRate`)
+- `src/lib/data-sources/` — one file per external API: `finnhub.ts` (`fetchQuote`), `fred.ts` (`fetchLatestRate`, `fetchNextReleaseDate` — see FRED gotcha above), `tracked-releases.ts` (exports `TRACKED_RELEASES`, the curated 5-release allowlist for Economic Calendar with `primaryName`/`secondaryName`/`category`/`importance`/`country` per release, static config not DB-backed)
+- `src/lib/calendar-ingestion.ts` — `ingestUpcomingCalendarEvents()`, loops `TRACKED_RELEASES`, upserts into `calendar_events` on `(fred_release_id, release_date)`
+- `src/lib/morning-brief-generation.ts` — `generateMorningBrief()`, reuses `getMarketsDashboard()` from `markets.ts` for movers data (do not duplicate snapshot-fetching logic here), calls Gemini via the same pattern as `news-analysis.ts`, upserts into `morning_briefs` on `brief_date`
+- `src/app/calendar/` — Economic Calendar page (`page.tsx` server component) + `src/components/calendar/CalendarView.tsx` (client component)
+- `src/app/api/cron/calendar-ingest/route.ts` — cron route for calendar ingestion, live on cron-job.org (daily)
 - `src/lib/supabase/` — `client.ts` (anon key, browser-safe, use for all frontend/UI reads) and `admin.ts` (service role key, server-only, use only in cron/ingestion code, must never be imported into client-side/browser code)
 - `src/lib/cron/` — `ingest-market-snapshots.ts`, the core ingestion loop
 - `src/app/api/cron/market-snapshot/route.ts` — the API route wrapping ingestion, checks `CRON_SECRET`
@@ -110,6 +114,10 @@ Rates (US10Y, US2Y) use FRED directly (`DGS10`, `DGS2`), since bond ETF prices d
 Composite index on `(asset_id, timestamp DESC)`. RLS enabled: public read-only, no public write. This schema is strictly for market price data; News Engine and Morning Brief get their own tables later, not folded into these two.
 
 **`news_articles` table** (Week 2, time-series, cron-populated): `id` (uuid, PK), `marketaux_uuid` (text, unique, dedup key), `title` (text), `description` (text, nullable), `url` (text), `image_url` (text, nullable — added after initial table creation, existing rows from before this column existed permanently have `image_url = NULL` since upsert uses `ignoreDuplicates: true`), `source` (text, nullable), `published_at` (timestamptz), `sentiment_score` (numeric, nullable — averaged from Marketaux's per-entity scores), `matched_asset_ids` (uuid array, FK-style references into `assets.id`, can be empty), `is_macro` (boolean — independent of `matched_asset_ids`, not mutually exclusive), `ai_analysis` (jsonb: `{what_happened, why_it_matters, trade_read}`, null until phase 2 analysis runs), `ai_model_used` (text, nullable), `created_at`. GIN index on `matched_asset_ids`, partial index on rows where `ai_analysis IS NULL`, public-read RLS matching `assets`/`market_snapshots`. **Note**: this table existed in production before it was correctly tracked in `supabase_schema.sql` (schema drift from initial creation), this has since been fixed retroactively, the file now matches production.
+
+**`calendar_events` table** (Week 3, cron-populated): `id` (uuid, PK), `fred_release_id` (text), `series_id` (text, nullable), `event_name` (text), `country` (text), `category` (text, CHECK constraint: inflation/employment/rates/growth/manufacturing), `importance` (text, CHECK: high/medium/low), `release_date` (date), `release_time` (time, nullable), `period_covered` (text, nullable), `actual_value`/`previous_value`/`estimated_consensus`/`estimate_rationale` (text, nullable — populated by a later estimate step, not yet built), `estimate_generated_at`/`estimate_model_used` (nullable), `status` (text, CHECK: scheduled/released/revised, defaults 'scheduled'), timestamps. Unique index on `(fred_release_id, release_date)`. Partial index for pending-estimate query pattern. Public-read RLS.
+
+**`morning_briefs` table** (Week 3, cron-populated): `id` (uuid, PK), `brief_date` (date, UNIQUE), `content` (text, the AI narrative), `movers_data` (jsonb, top-3-gainers/top-3-losers), `ai_model_used` (text), `generated_at`, `created_at`. Public-read RLS. No `updated_at`, this table is write-once per day, not revised.
 
 **No SQL/schema changes without explicit permission each time**, even if it seems obviously correct.
 
@@ -170,6 +178,10 @@ A 4-tier text hierarchy is established and should be followed for any new UI: **
 
 **News card/modal image fallback (when `image_url` is null) uses a 5-color palette keyed to asset class**, not a flat teal-only fill: teal=indices, purple=FX, pink=rates, coral=commodities, gray=macro-only/no matched asset. Same family as existing design tokens, no clashing new hues.
 
+**Economic Calendar's importance signal uses `--color-accent` (teal), never `--color-market-up`/`--color-market-down`.** Sage/coral are reserved exclusively for price-direction and must never be reused for anything else (importance, nav states, sentiment) anywhere in the app. Status (Confirmed/teal vs Date TBD/muted-grey) and importance (accent bar opacity: high=100%, medium=45%, low=15%) are two separate signals on the same card, don't conflate them.
+
+**All page-level scroll containers must have `.scrollbar-none` applied** (utility class already defined in `globals.css`, hides scrollbar chrome cross-browser while preserving scroll function). Currently applied to: `AppShell.tsx`'s `<main>`, `NewsFeed.tsx`'s modal AND its grid-view root div, `MarketsDashboard.tsx`'s root div. **A page can have more than one real scroll container** — don't assume `<main>` covers everything; check DevTools' Layout panel for which specific element gets the "scroll" badge before applying the fix, don't guess from reading code alone.
+
 ## Working Habits
 
 1. Verify technical claims against the real API/service before locking anything in, don't trust a confident-sounding claim at face value.
@@ -183,10 +195,14 @@ A 4-tier text hierarchy is established and should be followed for any new UI: **
 9. Assume frequent commits; suggest a natural commit point and a concise commit message at each logical stopping point.
 10. **When any query touches `market_snapshots` (or any table expected to grow large) across multiple rows/a time range, always set an explicit `.limit()` sized to the actual expected row count at current write frequency. Never rely on Supabase's default 1000-row cap.** This is not a style preference, it caused a real, hours-long silent data-staleness bug once already.
 11. When diagnosing a visual/rendering bug, investigate the actual root cause (read the library's source if needed, check compiled CSS output, trace the actual DOM/component tree) rather than guessing at a plausible-sounding fix and moving on. A guessed fix that happens to look right in one screenshot has previously turned out to be wrong in a different context (e.g. a badge-sizing fix that worked in one card but not in the detail panel, because the actual cause was different in each location).
+12. **A confident, long, technical-sounding AI investigation is not the same as a verified answer.** One attempt at diagnosing a scrollbar bug this project produced several paragraphs of plausible reasoning that built two separate theories, then explicitly abandoned both, landing back at "probably a cache issue," the same non-answer as before dressed up in more words. Real browser DevTools inspection (checking which element gets the "scroll" badge in the Layout panel) found the true answer in under a minute. Prefer direct inspection over another round of prose-based investigation when the tool is available.
+13. **Verification effort should scale to risk, not be applied uniformly.** Full `git diff` + `npx tsc --noEmit` + careful read-through for new logic, multi-file changes, or anything touching data/business logic. A quick `git status`/`git diff` glance is sufficient for small, single-line, low-risk mechanical edits (a class added, a rename applied consistently) — don't demand the full ceremony for trivial changes.
+14. **When a model's own report contradicts what was actually asked** (claims to reuse an existing pattern but visibly wrote something new), ask it directly to explain the discrepancy rather than silently accepting or silently overriding it yourself. This has produced genuinely better outcomes than either alternative: the model finding and switching to a better existing function once asked, rather than defensively justifying its first answer.
+15. **Treat AI-generated "here's a free API for that" suggestions with default skepticism**, especially from search-summary/AI-Mode-style tools. Several such suggestions this project (Trading Economics, Finnhub's calendar endpoint specifically, Yahoo Finance undocumented endpoints, Investing.com/other scraping) were confidently worded and wrong or unverifiable, some directly contradicted by this project's own live testing. Live-test before trusting, every time, no exceptions for confident phrasing.
 
 ## Timeline
 
-As of 2026-08-08: **Week 1 and Week 2 are both complete.** Markets Dashboard: fully built, polished, deployed, and its one parked bug (30D chart duplicate/missing axis labels) fixed and verified in-browser. News Engine: backend, full UI build, and a full visual redesign pass (modal detail view, Sentimeter, asset-class fallback palette, chevron navigation) all done and verified in-browser. Week 3 (Morning Brief + Economic Calendar) starting now.
+As of 2026-08-16: **Week 1 and Week 2 complete. Week 3's Economic Calendar module is fully complete** (schema, FRED integration, ingestion, cron, live cron-job.org registration, full frontend, all verified in-browser). **Morning Brief's backend is built and verified** (schema, generation logic reusing `getMarketsDashboard()` for movers + Gemini for narrative), but its cron route, frontend, and cron-job.org registration are NOT yet built, that's the current next step.
 
 ## Itinerary (current source of truth, supersedes any flat list)
 
@@ -197,6 +213,9 @@ As of 2026-08-08: **Week 1 and Week 2 are both complete.** Markets Dashboard: fu
 - UI: card, modal detail view (converted from an initial side-panel build to a full-screen blurred/dimmed modal overlay after in-browser review), Sentimeter (renamed from "sentiment gauge," needle-and-arc redesign), 5-color asset-class fallback palette, Unified/Split feed views, prev/next chevron navigation between articles. See Design Language section for the permanent modal-vs-side-panel design fork and Sentimeter naming rule.
 - Workflow established here, worth reusing for future significant UI work: build an interactive HTML mockup with real Atlas tokens first, iterate directly with the user, get sign-off, then translate into a detailed OpenCode prompt with the mockup attached, rather than describing target visuals in prose alone.
 
-**Week 3 (starting now):** Morning Brief (AI-generated daily summary). Economic Calendar (data, UI, plain-English explanations). Not yet scoped in detail as of this update, scoping is the first task. Note: a Palantir-style causal-chain presentation idea and an "AI Observation" panel style (short analytical takes with confidence scores) were suggested externally during Week 1 and parked as relevant to News Engine/this module, worth revisiting here rather than building from scratch.
+**Week 3: Economic Calendar DONE. Morning Brief backend DONE, frontend + cron in progress.**
+- Economic Calendar: schema, FRED integration (with two real bugs found/fixed: plural-vs-singular endpoint, ascending-vs-descending sort for high-frequency releases), curated 5-release allowlist, ingestion, cron route, live daily cron-job.org job with failure alerts, diagnostic script, full frontend (day-grouped, TBD section, empty-week fallback), signed-off v4 design. Also fixed app-wide: `.scrollbar-none` applied to 4 separate scroll containers across 3 pages (found via real DevTools inspection after a prose-based AI investigation attempt failed to find the answer), and a Sidebar white-box bug specific to the Calendar nav item.
+- Morning Brief: schema live, `generateMorningBrief()` built and verified (reuses `getMarketsDashboard()`, correctly avoids fabricating calendar mentions when nothing's confirmed). **Remaining: cron route (`/api/cron/morning-brief`, daily), frontend (mockup-first per established workflow), cron-job.org registration.**
+- Note: a Palantir-style causal-chain presentation idea and an "AI Observation" panel style (short analytical takes with confidence scores) were suggested externally during Week 1 and parked as relevant to News Engine/this module, still not built, worth revisiting if time allows.
 
 **Week 4:** Commodities deep-dive (per-commodity pages, top 5-6) → full pre-commit bug pass → cross-browser/mobile check → README finalized → remove dev-only pages before recruiter visibility → buffer.

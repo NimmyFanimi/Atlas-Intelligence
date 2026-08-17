@@ -46,11 +46,10 @@ const NAV_ITEMS: NavDef[] = [
 
   // ── Coming Soon ─────────────────────────────────────────────────────────
   {
-    kind: 'coming-soon',
+    kind: 'active',
+    href: '/morning-brief',
     icon: Sun,
     label: 'Morning Brief',
-    tooltipTextExpanded:  'Coming in Week 3',
-    tooltipTextCollapsed: 'Morning Brief (Week 3)',
   },
   {
     kind: 'active',
