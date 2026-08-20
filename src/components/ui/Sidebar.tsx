@@ -57,12 +57,11 @@ const NAV_ITEMS: NavDef[] = [
     icon: Calendar,
     label: 'Economic Calendar',
   },
-  {
-    kind: 'coming-soon',
+{
+    kind: 'active',
+    href: '/commodities',
     icon: Droplet,
     label: 'Commodities Intelligence',
-    tooltipTextExpanded:  'Coming in Week 4',
-    tooltipTextCollapsed: 'Commodities Intelligence (Week 4)',
   },
 
   // ── Planned ─────────────────────────────────────────────────────────────

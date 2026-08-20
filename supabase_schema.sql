@@ -167,7 +167,7 @@ INSERT INTO assets (symbol, name, asset_class, finnhub_symbol, fred_series_id, e
 ('WTI',     'WTI Crude',     'commodity', 'USO',  NULL, 'PET.RWTC.D'),
 ('BRENT',   'Brent Crude',   'commodity', 'BNO',  NULL, 'PET.RBRTE.D'),
 ('GOLD',    'Gold',          'commodity', 'GLD',  NULL, NULL),
-('NATGAS',  'Natural Gas',   'commodity', 'UNG',  NULL, 'NG.RNGC1.D'),
+('NATGAS',  'Natural Gas',   'commodity', 'UNG',  NULL, 'NG.RNGWHHD.D'),
 ('COPPER',  'Copper',        'commodity', 'CPER', NULL, NULL)
 ON CONFLICT (symbol) DO UPDATE SET
   name = EXCLUDED.name,
