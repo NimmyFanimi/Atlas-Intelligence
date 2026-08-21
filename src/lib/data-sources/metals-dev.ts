@@ -33,12 +33,21 @@ export async function fetchMetalsDevPrices(metals: string[]): Promise<Record<str
   const unique = Array.from(new Set(metals.filter(m => m)));
   if (unique.length === 0) return {};
 
-  const url = `https://api.metals.dev/v1/latest?api_key=${apiKey}&base=USD&metals=${encodeURIComponent(unique.join(','))}`;
+  // Metals.dev /v1/latest only documents `currency` and `unit` as query params;
+  // there is no `metals` filter — it returns ALL metals every time. Previous
+  // `base` + `metals` params were undocumented and cause HTTP 400.
+  const url = `https://api.metals.dev/v1/latest?api_key=${apiKey}&currency=USD`;
 
   const res = await fetch(url, { cache: 'no-store' });
 
   if (!res.ok) {
-    throw new Error(`Metals.dev /latest [${unique.join(',')}] failed: HTTP ${res.status}`);
+    // Include body detail when available to distinguish quota vs param errors
+    let detail = '';
+    try {
+      const body = await res.text();
+      if (body) detail = `: ${body.slice(0, 500)}`;
+    } catch {}
+    throw new Error(`Metals.dev /latest [${unique.join(',')}] failed: HTTP ${res.status}${detail}`);
   }
 
   const data: MetalsDevResponse = await res.json();

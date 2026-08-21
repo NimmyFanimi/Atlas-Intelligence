@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'; // never cache this route
 export const maxDuration = 60; // allow up to 60s for the full ingestion run
 
 export async function GET(request: NextRequest) {
-    console.log('[diag]', JSON.stringify({ vercelEnv: process.env.VERCEL_ENV, commitSha: process.env.VERCEL_GIT_COMMIT_SHA, eiaKeyPresent: !!process.env.EIA_API_KEY, eiaKeyLength: process.env.EIA_API_KEY?.length ?? 0, metalsDevKeyPresent: !!process.env.METALS_DEV_API_KEY }));
     const authHeader = request.headers.get('authorization');
     const expectedSecret = process.env.CRON_SECRET;
 
