@@ -14,9 +14,8 @@ export interface TrackedRelease {
 }
 
 export const TRACKED_RELEASES: TrackedRelease[] = [
-  { releaseId: '10',  primaryName: 'US CPI',             secondaryName: 'Consumer Price Index',          category: 'inflation',  importance: 'high', country: 'US' },
-  { releaseId: '50',  primaryName: 'US NFP',             secondaryName: 'Employment Situation',           category: 'employment', importance: 'high', country: 'US' },
-  { releaseId: '53',  primaryName: 'US GDP',             secondaryName: 'Gross Domestic Product',         category: 'growth',     importance: 'high', country: 'US' },
-  { releaseId: '54',  primaryName: 'US PCE',             secondaryName: 'Personal Income & Outlays',      category: 'inflation',  importance: 'high', country: 'US' },
-  { releaseId: '101', primaryName: 'FOMC Press Release', secondaryName: 'Federal Reserve rate decision', category: 'rates',      importance: 'high', country: 'US' },
+  { releaseId: '10',  primaryName: 'US CPI',  secondaryName: 'Consumer Price Index',      category: 'inflation',  importance: 'high', country: 'US' },
+  { releaseId: '50',  primaryName: 'US NFP',  secondaryName: 'Employment Situation',       category: 'employment', importance: 'high', country: 'US' },
+  { releaseId: '53',  primaryName: 'US GDP',  secondaryName: 'Gross Domestic Product',     category: 'growth',     importance: 'high', country: 'US' },
+  { releaseId: '54',  primaryName: 'US PCE',  secondaryName: 'Personal Income & Outlays',  category: 'inflation',  importance: 'high', country: 'US' },
 ];

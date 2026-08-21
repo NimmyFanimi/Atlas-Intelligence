@@ -106,6 +106,11 @@ CREATE TABLE IF NOT EXISTS calendar_events (
   -- Status
   status text NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','released','revised')),
 
+  -- Provenance: 'fred' for FRED-sourced events (CPI/NFP/GDP/PCE),
+  -- or the actual source domain for non-FRED events (e.g. 'the-calendar.net').
+  -- NULL is treated as 'fred' for backward compatibility with pre-existing rows.
+  data_source text,
+
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );

@@ -24,6 +24,7 @@
 
 import { supabaseAdmin } from './supabase/admin';
 import { fetchNextReleaseDate } from './data-sources/fred';
+import { fetchUpcomingFomcMeetings } from './data-sources/fomc-calendar';
 import { TRACKED_RELEASES } from './data-sources/tracked-releases';
 
 interface CalendarEventRow {
@@ -33,6 +34,7 @@ interface CalendarEventRow {
   category: string;
   importance: string;
   country: string;
+  data_source: string;
 }
 
 /**
@@ -54,7 +56,7 @@ async function upsertCalendarEvents(rows: CalendarEventRow[]): Promise<{ inserte
       ignoreDuplicates: true, // don't overwrite existing rows, estimates may
         // already be populated on a previously-seen event
     })
-    .select('id');
+    .select('id, data_source');
 
   if (error) {
     throw new Error(`Failed to upsert calendar_events: ${error.message}`);
@@ -79,6 +81,7 @@ export async function ingestUpcomingCalendarEvents(): Promise<{
   inserted: number;
   skipped: number;
   errors: string[];
+  fomcCount: number;
 }> {
   const rows: CalendarEventRow[] = [];
   const errors: string[] = [];
@@ -99,6 +102,7 @@ export async function ingestUpcomingCalendarEvents(): Promise<{
         category: tracked.category,
         importance: tracked.importance,
         country: tracked.country,
+        data_source: 'fred',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -110,7 +114,31 @@ export async function ingestUpcomingCalendarEvents(): Promise<{
     }
   }
 
+  // FOMC: sourced from the unofficial the-calendar.net mirror (not FRED).
+  // Failure here must not block FRED-based events.
+  let fomcCount = 0;
+  try {
+    const fomcMeetings = await fetchUpcomingFomcMeetings();
+    for (const meeting of fomcMeetings) {
+      rows.push({
+        fred_release_id: 'fomc',
+        release_date: meeting.date,
+        event_name: 'FOMC Rate Decision',
+        category: 'rates',
+        importance: 'high',
+        country: 'US',
+        data_source: 'the-calendar.net',
+      });
+    }
+    fomcCount = fomcMeetings.length;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`calendar-ingestion: error fetching FOMC calendar: ${message}`);
+    skipped += 1;
+    errors.push(`FOMC calendar: ${message}`);
+  }
+
   const { inserted } = await upsertCalendarEvents(rows);
 
-  return { matched: rows.length, inserted, skipped, errors };
+  return { matched: rows.length, inserted, skipped, errors, fomcCount };
 }

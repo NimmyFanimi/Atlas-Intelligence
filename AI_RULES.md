@@ -88,8 +88,8 @@ Rates (US10Y, US2Y) use FRED directly (`DGS10`, `DGS2`), since bond ETF prices d
 
 ## Existing File Structure (check before creating new files, don't duplicate)
 
-- `src/lib/data-sources/` — one file per external API: `finnhub.ts` (`fetchQuote`), `fred.ts` (`fetchLatestRate`, `fetchNextReleaseDate` — see FRED gotcha above), `tracked-releases.ts` (exports `TRACKED_RELEASES`, the curated 5-release allowlist for Economic Calendar with `primaryName`/`secondaryName`/`category`/`importance`/`country` per release, static config not DB-backed)
-- `src/lib/calendar-ingestion.ts` — `ingestUpcomingCalendarEvents()`, loops `TRACKED_RELEASES`, upserts into `calendar_events` on `(fred_release_id, release_date)`
+- `src/lib/data-sources/` — one file per external API: `finnhub.ts` (`fetchQuote`), `fred.ts` (`fetchLatestRate`, `fetchNextReleaseDate` — see FRED gotcha above), `tracked-releases.ts` (exports `TRACKED_RELEASES`, the curated 4-release FRED allowlist for Economic Calendar: CPI/NFP/GDP/PCE, with `primaryName`/`secondaryName`/`category`/`importance`/`country` per release, static config not DB-backed), `fomc-calendar.ts` (`fetchUpcomingFomcMeetings` — fetches FOMC meeting dates from the unofficial the-calendar.net mirror, NOT a FRED source, see sourcing note in the file)
+- `src/lib/calendar-ingestion.ts` — `ingestUpcomingCalendarEvents()`, loops `TRACKED_RELEASES` for FRED events + calls `fetchUpcomingFomcMeetings()` for FOMC, upserts into `calendar_events` on `(fred_release_id, release_date)`, includes `data_source` column to distinguish FRED vs non-FRED rows
 - `src/lib/morning-brief-generation.ts` — `generateMorningBrief()`, reuses `getMarketsDashboard()` from `markets.ts` for movers data (do not duplicate snapshot-fetching logic here), calls Gemini via the same pattern as `news-analysis.ts`, upserts into `morning_briefs` on `brief_date`
 - `src/app/calendar/` — Economic Calendar page (`page.tsx` server component) + `src/components/calendar/CalendarView.tsx` (client component)
 - `src/app/api/cron/calendar-ingest/route.ts` — cron route for calendar ingestion, live on cron-job.org (daily)

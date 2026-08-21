@@ -12,6 +12,7 @@ export interface CalendarEvent {
   importance: string;
   release_date: string;
   status: string;
+  data_source: string | null;
 }
 
 export interface GroupedDay {
@@ -51,6 +52,7 @@ function formatDayLabel(dateStr: string) {
 function EventCard({ event }: { event: CalendarEvent }) {
   const tracked = TRACKED_RELEASES.find(r => r.releaseId === event.fred_release_id);
   const secondaryName = tracked?.secondaryName || '';
+  const isNonFred = event.data_source && event.data_source !== 'fred';
   
   const importanceOpacity = 
     event.importance === 'high' ? 'opacity-100' : 
@@ -68,6 +70,11 @@ function EventCard({ event }: { event: CalendarEvent }) {
           <span className="text-[11px] text-[var(--color-secondary)]">{event.country}</span>
           <span className="text-[10px] font-mono tracking-[0.03em] uppercase text-[var(--color-accent)]">{event.importance}</span>
         </div>
+        {isNonFred && (
+          <div className="text-[10px] text-[var(--color-secondary)]/50 mt-1">
+            Unofficial source
+          </div>
+        )}
       </div>
       <div className="justify-self-end text-right">
         <div className="inline-flex items-center text-[10px] font-mono px-[7px] py-[2px] rounded text-[var(--color-accent)] bg-[var(--color-accent)]/10 relative group">
