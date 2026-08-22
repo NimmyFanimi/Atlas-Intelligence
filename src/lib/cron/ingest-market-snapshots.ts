@@ -49,6 +49,31 @@ async function fredAlreadyFetchedToday(assetId: string): Promise<boolean> {
 }
 
 /**
+ * Checks whether a Metals.dev snapshot already exists today (UTC).
+ * Metals.dev is one batched call for multiple assets (GOLD + COPPER), so we
+ * check whether ANY asset with metadata->>source = 'metals_dev' has a row
+ * timestamped today. Lives next to fredAlreadyFetchedToday for easy comparison.
+ */
+async function metalsDevAlreadyFetchedToday(): Promise<boolean> {
+  const todayUtc = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+  const { data, error } = await supabaseAdmin
+    .from('market_snapshots')
+    .select('id')
+    .eq('metadata->>source', 'metals_dev')
+    .gte('timestamp', `${todayUtc}T00:00:00Z`)
+    .limit(1)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    // PGRST116 = "no rows found", expected if not yet fetched today
+    throw new Error(`Failed to check existing Metals.dev snapshot: ${error.message}`);
+  }
+
+  return data !== null;
+}
+
+/**
  * Computes change_abs / change_pct for sources (EIA, Metals.dev) that only
  * return an absolute price, never a change figure.
  *
@@ -141,21 +166,35 @@ export async function ingestMarketSnapshots(): Promise<IngestResult[]> {
 
   let metalsQuotes: Record<string, { value: number; date: Date }> = {};
   let metalsError: string | null = null;
+  let metalsSkippedToday = false;
 
   if (metalsNeeded.length > 0) {
-    try {
-      metalsQuotes = await fetchMetalsDevPrices(metalsNeeded);
-    } catch (err) {
-      metalsError = err instanceof Error ? err.message : String(err);
-    }
+    // Daily-fetch guard: skip the real API call entirely if we already have
+    // a successful metals_dev row today (UTC). Mirrors the FRED guard's
+    // success-only semantics — a failed/quota-exhausted run inserts nothing,
+    // so the next tick will correctly retry rather than being blocked.
+    const alreadyFetched = await metalsDevAlreadyFetchedToday();
+    if (alreadyFetched) {
+      metalsSkippedToday = true;
+    } else {
+      try {
+        metalsQuotes = await fetchMetalsDevPrices(metalsNeeded);
+      } catch (err) {
+        metalsError = err instanceof Error ? err.message : String(err);
+      }
 
-    // Defensive 100ms delay after the external API call to avoid burst detection
-    await new Promise(r => setTimeout(r, 100));
+      // Defensive 100ms delay after the external API call to avoid burst detection
+      await new Promise(r => setTimeout(r, 100));
+    }
   }
 
   for (const asset of assets as Asset[]) {
     // ── Metals.dev path (COPPER, GOLD) ───────────────────────────────────────
     if (METALS_DEV_METALS[asset.symbol]) {
+      if (metalsSkippedToday) {
+        results.push({ symbol: asset.symbol, status: 'skipped', message: 'Metals.dev already fetched today' });
+        continue;
+      }
       const metal = METALS_DEV_METALS[asset.symbol];
       try {
         const quote = metalsQuotes[metal];

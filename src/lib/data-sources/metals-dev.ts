@@ -27,8 +27,9 @@ export interface MetalsDevResult {
  * map rather than failing the whole call, so callers can report per-metal errors.
  */
 export async function fetchMetalsDevPrices(metals: string[]): Promise<Record<string, MetalsDevResult>> {
-  const apiKey = process.env.METALS_DEV_API_KEY;
-  if (!apiKey) throw new Error('METALS_DEV_API_KEY is not set');
+  const primaryKey = process.env.METALS_DEV_API_KEY;
+  if (!primaryKey) throw new Error('METALS_DEV_API_KEY is not set');
+  const fallbackKey = process.env.METALS_DEV_API_KEY_FALLBACK;
 
   const unique = Array.from(new Set(metals.filter(m => m)));
   if (unique.length === 0) return {};
@@ -36,18 +37,47 @@ export async function fetchMetalsDevPrices(metals: string[]): Promise<Record<str
   // Metals.dev /v1/latest only documents `currency` and `unit` as query params;
   // there is no `metals` filter — it returns ALL metals every time. Previous
   // `base` + `metals` params were undocumented and cause HTTP 400.
-  const url = `https://api.metals.dev/v1/latest?api_key=${apiKey}&currency=USD`;
+  const buildUrl = (key: string) => `https://api.metals.dev/v1/latest?api_key=${key}&currency=USD`;
 
-  const res = await fetch(url, { cache: 'no-store' });
+  function isQuotaExhaustionBody(body: string): boolean {
+    // Observed quota-exhausted shape: {"error":"Your plan quota for the month is exhausted","error_code":1203}
+    return body.includes('1203') || body.toLowerCase().includes('quota for the month is exhausted');
+  }
+
+  let res = await fetch(buildUrl(primaryKey), { cache: 'no-store' });
 
   if (!res.ok) {
-    // Include body detail when available to distinguish quota vs param errors
-    let detail = '';
+    let bodyText = '';
     try {
-      const body = await res.text();
-      if (body) detail = `: ${body.slice(0, 500)}`;
+      bodyText = await res.text();
     } catch {}
-    throw new Error(`Metals.dev /latest [${unique.join(',')}] failed: HTTP ${res.status}${detail}`);
+    const detail = bodyText ? `: ${bodyText.slice(0, 500)}` : '';
+    const isQuota = isQuotaExhaustionBody(bodyText);
+
+    if (isQuota) {
+      if (fallbackKey) {
+        console.log(`[Metals.dev] Primary key quota exhausted (HTTP ${res.status}), retrying with fallback key`);
+        const fallbackRes = await fetch(buildUrl(fallbackKey), { cache: 'no-store' });
+        if (!fallbackRes.ok) {
+          let fallbackBody = '';
+          try {
+            fallbackBody = await fallbackRes.text();
+          } catch {}
+          const fallbackDetail = fallbackBody ? `: ${fallbackBody.slice(0, 500)}` : '';
+          throw new Error(
+            `Metals.dev /latest [${unique.join(',')}] failed: HTTP ${fallbackRes.status}${fallbackDetail} (fallback also failed; primary was quota-exhausted: HTTP ${res.status}${detail})`
+          );
+        }
+        // Fallback succeeded — use its response for parsing below
+        res = fallbackRes;
+      } else {
+        console.log(`[Metals.dev] Primary key quota exhausted (HTTP ${res.status}) but METALS_DEV_API_KEY_FALLBACK is not set — cannot retry`);
+        throw new Error(`Metals.dev /latest [${unique.join(',')}] failed: HTTP ${res.status}${detail}`);
+      }
+    } else {
+      // Non-quota failure — do not fall back, surface the real error so bugs aren't masked
+      throw new Error(`Metals.dev /latest [${unique.join(',')}] failed: HTTP ${res.status}${detail}`);
+    }
   }
 
   const data: MetalsDevResponse = await res.json();
