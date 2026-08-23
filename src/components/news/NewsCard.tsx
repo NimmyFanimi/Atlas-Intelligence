@@ -103,7 +103,10 @@ export function relativeTime(iso: string): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.round(hr / 24);
   if (day < 7) return `${day}d ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const d = new Date(iso);
+  const dayNum = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(d);
+  const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d);
+  return `${dayNum} ${month}`;
 }
 
 export function formatSentiment(value: number): string {

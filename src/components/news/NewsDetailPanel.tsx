@@ -36,13 +36,11 @@ interface NewsDetailPanelProps {
 function absoluteTimestamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const day = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(date);
+  const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(date);
+  const year = new Intl.DateTimeFormat('en-US', { year: 'numeric' }).format(date);
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date);
+  return `${day} ${month} ${year}, ${time}`;
 }
 
 function CloseIcon() {

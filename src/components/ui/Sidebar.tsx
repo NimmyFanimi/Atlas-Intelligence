@@ -227,8 +227,6 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
           ))}
         </nav>
 
-        {/* ── Coming Soon ── */}
-        <SectionSeparator label="COMING SOON" isCollapsed={isCollapsed} />
         <div className="flex flex-col gap-0.5 px-2 flex-shrink-0">
           {comingSoonItems.map((item, idx) => (
             <PlannedItem
