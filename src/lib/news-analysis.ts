@@ -114,6 +114,7 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
     }),
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) {

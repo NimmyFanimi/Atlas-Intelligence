@@ -27,7 +27,7 @@ export interface FomcMeeting {
 export async function fetchUpcomingFomcMeetings(): Promise<FomcMeeting[]> {
   let res: Response;
   try {
-    res = await fetch(FOMC_CALENDAR_URL, { cache: 'no-store' });
+    res = await fetch(FOMC_CALENDAR_URL, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
   } catch {
     return [];
   }

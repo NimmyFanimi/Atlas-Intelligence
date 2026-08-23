@@ -147,7 +147,7 @@ export async function fetchMarketauxArticles(
     symbols
   )}&filter_entities=true&language=en&limit=${limit}&api_token=${apiKey}`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Marketaux fetch failed: ${res.status} ${body}`);

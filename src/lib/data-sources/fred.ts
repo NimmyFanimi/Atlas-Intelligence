@@ -42,7 +42,7 @@ export async function fetchNextReleaseDate(releaseId: string): Promise<UpcomingR
   // 3748 dated entries), so we must not rely on that.
   const url = `https://api.stlouisfed.org/fred/release/dates?release_id=${releaseId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=20`;
 
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
 
   if (!res.ok) {
     throw new Error(`FRED release ${releaseId} dates failed: HTTP ${res.status}`);
@@ -77,7 +77,7 @@ export async function fetchLatestRate(seriesId: string): Promise<FredResult> {
   // (FRED sometimes publishes '.' for weekends/holidays before the real value arrives)
   const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${encodeURIComponent(seriesId)}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=5`;
 
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
 
   if (!res.ok) {
     throw new Error(`FRED [${seriesId}] failed: HTTP ${res.status}`);
