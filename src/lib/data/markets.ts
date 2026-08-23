@@ -40,7 +40,12 @@ export interface MarketsDashboardData {
 }
 
 const SPARKLINE_POINTS = 30;
-const HISTORY_WINDOW_HOURS = 48;
+// HISTORY_WINDOW_HOURS removed from query logic: per-asset latest is now unconditional
+// ("most recent row that exists" whether 5 min or 24h old) so sparse daily assets
+// (GOLD/COPPER via Metals.dev, US10Y/US2Y via FRED) are not crowded out by the
+// 1000-row PostgREST cap that truncated the prior global window query. Sparkline
+// likewise fetches the most recent 30 rows per asset regardless of age, matching
+// getCommoditiesOverview / commodityDetail pattern.
 
 export async function getMarketsDashboard(): Promise<MarketsDashboardData> {
   const { data: assets, error: assetsError } = await supabaseAdmin
@@ -53,35 +58,38 @@ export async function getMarketsDashboard(): Promise<MarketsDashboardData> {
     throw new Error(`Failed to load assets: ${assetsError?.message}`);
   }
 
-  const assetIds = assets.map((a) => a.id);
+  // Per-asset parallel queries — each asset independently fetches its most
+  // recent SPARKLINE_POINTS rows. No asset can crowd out another via global
+  // ORDER BY timestamp cap. Mirrors commodityDetail.ts / getCommoditiesOverview.
+  const perAssetResults = await Promise.all(
+    assets.map(async (asset) => {
+      const { data, error } = await supabaseAdmin
+        .from('market_snapshots')
+        .select('timestamp, price, change_pct, change_abs, metadata')
+        .eq('asset_id', asset.id)
+        .order('timestamp', { ascending: false })
+        .limit(SPARKLINE_POINTS);
 
-  const since = new Date(
-    Date.now() - HISTORY_WINDOW_HOURS * 60 * 60 * 1000
-  ).toISOString();
+      if (error) {
+        throw new Error(`Failed to load snapshots for ${asset.symbol}: ${error.message}`);
+      }
 
-  const { data: snapshots, error: snapshotsError } = await supabaseAdmin
-    .from('market_snapshots')
-    .select('asset_id, timestamp, price, change_pct, change_abs, metadata')
-    .in('asset_id', assetIds)
-    .gte('timestamp', since)
-    .order('timestamp', { ascending: false })
-    .limit(3000);
-
-  if (snapshotsError) {
-    throw new Error(`Failed to load snapshots: ${snapshotsError.message}`);
-  }
+      // Reverse to chronological for sparkline/latest logic (oldest -> newest)
+      const rows = (data ?? []).slice().reverse();
+      return { assetId: asset.id, rows };
+    })
+  );
 
   const snapshotsByAsset = new Map<string, Snapshot[]>();
-  for (const snap of [...(snapshots || [])].reverse()) {
-    const existing = snapshotsByAsset.get(snap.asset_id) || [];
-    existing.push({
-      timestamp: snap.timestamp,
-      price: Number(snap.price),
-      change_pct: snap.change_pct,
-      change_abs: snap.change_abs,
-      metadata: (snap.metadata as Record<string, unknown>) || {},
-    });
-    snapshotsByAsset.set(snap.asset_id, existing);
+  for (const { assetId, rows } of perAssetResults) {
+    const snaps: Snapshot[] = rows.map((r) => ({
+      timestamp: r.timestamp as string,
+      price: Number((r as { price: number }).price),
+      change_pct: (r as { change_pct: number | null }).change_pct,
+      change_abs: (r as { change_abs: number | null }).change_abs,
+      metadata: ((r as { metadata: unknown }).metadata as Record<string, unknown>) || {},
+    }));
+    snapshotsByAsset.set(assetId, snaps);
   }
 
   const assetsWithData: AssetWithSnapshot[] = assets.map((asset) => {
