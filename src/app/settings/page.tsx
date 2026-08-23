@@ -30,14 +30,7 @@ export default function SettingsPage() {
           <p className="text-[13px] leading-[1.65] text-[var(--color-secondary)]">
             System settings, user preferences, API keys, and notification channels will be configurable here.
           </p>
-          <p className="font-mono text-[11px] tracking-[0.03em] text-[var(--color-secondary)]/60 mt-3">
-            This section is intentionally left as a polished placeholder — no mock controls.
-          </p>
         </div>
-      </div>
-
-      <div className="mt-4 font-mono text-[10px] tracking-[0.15em] text-[var(--color-secondary)]/40 uppercase">
-        Planned · matches sidebar PLANNED treatment
       </div>
     </div>
   );
