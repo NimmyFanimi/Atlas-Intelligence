@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { formatPrice, formatPercent } from '@/lib/utils/format';
 
 export interface Snapshot {
   timestamp: string;
@@ -183,4 +184,92 @@ export async function getMarketsDashboard(): Promise<MarketsDashboardData> {
   };
 
   return { assets: assetsWithData, grouped, defaultSelectedId, summary };
+}
+
+export interface LandingAssetPreview {
+  symbol: string;
+  name: string;
+  assetClass: string;
+  price: number;
+  changePct: number | null;
+  formattedPrice: string;
+  formattedChangePct: string;
+  isUp: boolean;
+}
+
+export async function getLandingPreviewAssets(): Promise<LandingAssetPreview[]> {
+  const targetSymbols = ['WTI', 'GOLD', 'DXY', 'US10Y'];
+
+  const { data: assets, error: assetsError } = await supabaseAdmin
+    .from('assets')
+    .select('id, symbol, name, asset_class')
+    .in('symbol', targetSymbols);
+
+  if (assetsError || !assets) {
+    throw new Error(`Failed to load landing preview assets: ${assetsError?.message}`);
+  }
+
+  const previews = await Promise.all(
+    targetSymbols.map(async (sym) => {
+      const asset = assets.find((a) => a.symbol === sym);
+      if (!asset) return null;
+
+      const { data: snapshots, error: snapError } = await supabaseAdmin
+        .from('market_snapshots')
+        .select('price, change_pct, timestamp')
+        .eq('asset_id', asset.id)
+        .order('timestamp', { ascending: false })
+        .limit(2);
+
+      if (snapError) {
+        throw new Error(`Failed to load snapshot for ${sym}: ${snapError.message}`);
+      }
+
+      const latest = snapshots?.[0];
+      if (!latest) return null;
+
+      const price = Number(latest.price);
+      let changePct = latest.change_pct;
+
+      // If change_pct is null (e.g. FRED daily rates), look for previous distinct snapshot or fallback
+      if (changePct === null || changePct === undefined) {
+        const { data: prevSnap } = await supabaseAdmin
+          .from('market_snapshots')
+          .select('price')
+          .eq('asset_id', asset.id)
+          .neq('price', price)
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (prevSnap && prevSnap.price > 0) {
+          changePct = ((price - prevSnap.price) / prevSnap.price) * 100;
+        } else {
+          changePct = 0;
+        }
+      }
+
+      // Commodities get $, FX/rates/indices do not
+      const formattedPrice =
+        asset.asset_class === 'commodity'
+          ? `$${formatPrice(price)}`
+          : formatPrice(price);
+
+      const formattedChangePct = formatPercent(changePct);
+      const isUp = changePct >= 0;
+
+      return {
+        symbol: asset.symbol,
+        name: asset.name,
+        assetClass: asset.asset_class,
+        price,
+        changePct,
+        formattedPrice,
+        formattedChangePct,
+        isUp,
+      };
+    })
+  );
+
+  return previews.filter((p): p is LandingAssetPreview => p !== null);
 }

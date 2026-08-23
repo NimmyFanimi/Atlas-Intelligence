@@ -7,6 +7,7 @@
   --color-border: #2A2D33;
   --color-primary: #E8E9EB;
   --color-secondary: #8B8F98;
+  --color-muted: #5E6169;
   --color-accent: #0D9488; /* Teal 600 */
   --color-accent-hover: #0F766E; /* Teal 700 */
   
@@ -49,6 +50,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 }
+
 /* ── Utility: hide scrollbar while keeping scrollability ── */
 .scrollbar-none {
   scrollbar-width: none;        /* Firefox */
@@ -56,4 +58,20 @@
 }
 .scrollbar-none::-webkit-scrollbar {
   display: none;                /* Chrome / Safari / WebKit */
+}
+
+/* ── Pulsing dot animation for live indicators ── */
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(92, 141, 115, 0.5);
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 4px rgba(92, 141, 115, 0);
+  }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.8s ease-in-out infinite;
 }
