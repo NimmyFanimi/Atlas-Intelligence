@@ -41,7 +41,7 @@ type NavDef = ActiveNavDef | PlannedNavDef;
 
 const NAV_ITEMS: NavDef[] = [
   // ── Active ──────────────────────────────────────────────────────────────
-  { kind: 'active', href: '/',     icon: LayoutDashboard, label: 'Markets Dashboard' },
+  { kind: 'active', href: '/dashboard',     icon: LayoutDashboard, label: 'Markets Dashboard' },
   { kind: 'active', href: '/news', icon: Newspaper,       label: 'News Engine'       },
 
   // ── Coming Soon ─────────────────────────────────────────────────────────
