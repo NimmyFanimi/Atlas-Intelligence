@@ -193,9 +193,13 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
       {/* ── Scrollable content area — scrollbar hidden, flex-1 fills space ── */}
       <div className="scrollbar-none flex flex-col flex-1 min-h-0 overflow-y-auto">
 
-        {/* Logo / Wordmark */}
+        {/* Logo / Wordmark — links to landing page */}
         <div className="flex items-center px-4 py-4 h-[56px] border-b border-[var(--color-border)]/30 overflow-hidden flex-shrink-0">
-          <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            aria-label="Back to home"
+            className="flex items-center gap-3 rounded-[var(--radius-sm)] transition-opacity duration-150 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-0"
+          >
             <div className="w-8 h-8 flex items-center justify-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-sm)] flex-shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-[var(--color-accent)]">
                 <path d="M12 2L2 22H7L12 12L17 22H22L12 2Z" fill="currentColor" />
@@ -211,7 +215,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
                 intelligence
               </span>
             </div>
-          </div>
+          </Link>
         </div>
 
         {/* ── Active Modules ── */}
