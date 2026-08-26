@@ -10,6 +10,52 @@
 
 An institutional-grade market intelligence platform, built for Sales & Trading, Commodities, and Capital Markets workflows.
 
+## Screenshots
+
+| Markets Dashboard | Commodities Overview |
+|---|---|
+| ![Markets Dashboard](.github/screenshots/markets-dashboard.png) | ![Commodities Overview](.github/screenshots/commodities-overview.png) |
+
+| Commodity Deep-Dive | Economic Calendar |
+|---|---|
+| ![Commodity Deep-Dive](.github/screenshots/commodity-deep-dive.png) | ![Economic Calendar](.github/screenshots/economic-calendar.png) |
+
+| News Engine (Feed) | News Engine (Detail) |
+|---|---|
+| ![News Engine Grid](.github/screenshots/news-engine-grid.jpg) | ![News Engine Modal](.github/screenshots/news-engine-modal.jpg) |
+
+| Morning Brief |
+|---|
+| ![Morning Brief](.github/screenshots/morning-brief.png) |
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph sources["External data sources"]
+        direction LR
+        finnhub["Finnhub<br/><small>Indices, FX</small>"]
+        fred["FRED<br/><small>Rates, calendar</small>"]
+        eia["EIA<br/><small>Energy spot</small>"]
+        metals["Metals.dev<br/><small>Gold, Copper</small>"]
+        marketaux["Marketaux<br/><small>News</small>"]
+    end
+
+    cron["Cron ingestion routes<br/><small>market-snapshot · calendar-ingest · news-ingest · morning-brief</small>"]
+    supabase[("Supabase<br/><small>Postgres, public read-only RLS</small>")]
+    frontend["Next.js frontend<br/><small>Reads only from Supabase, never calls external APIs directly</small>"]
+
+    finnhub --> cron
+    fred --> cron
+    eia --> cron
+    metals --> cron
+    marketaux --> cron
+    cron --> supabase
+    supabase --> frontend
+```
+
+A scheduled job writes snapshots into Supabase on a fixed cadence (5 minutes for prices, daily for calendar/FRED data, every 2 hours for news). The frontend never calls Finnhub, FRED, EIA, Metals.dev, or Marketaux directly, it only ever reads from Supabase. This keeps every free-tier rate limit comfortably safe regardless of visitor traffic, and gives historical price data as a side effect of snapshotting rather than a separate feature to build.
+
 ## Overview
 Atlas Intelligence is a modern finance dashboard that answers four core questions:
 1. What happened in the markets?
