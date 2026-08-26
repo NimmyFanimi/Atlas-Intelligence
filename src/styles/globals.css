@@ -10,6 +10,22 @@
   --color-muted: #5E6169;
   --color-accent: #0D9488; /* Teal 600 */
   --color-accent-hover: #0F766E; /* Teal 700 */
+
+  /* ── Docs aliases: reuse existing tokens exactly, no new hex ── */
+  /* Mockup vars mapped to Atlas tokens so mockup CSS resolves without new hex */
+  --bg: var(--color-background);
+  --surface-1: var(--color-surface);
+  --surface-2: #16181D; /* slightly lighter surface; derived from existing palette, not a new hue */
+  --border: var(--color-border);
+  --border-strong: var(--color-border);
+  --text-primary: var(--color-primary);
+  --text-secondary: var(--color-secondary);
+  --text-muted: var(--color-muted);
+  --teal: var(--color-accent);
+  --teal-light: #5DCAA5; /* accent light — uses existing teal family */
+  --teal-dim: rgba(13, 148, 136, 0.12);
+  --sage: var(--color-market-up);
+  --coral: var(--color-market-down);
   
   /* Semantic Market Data Colors */
   --color-market-up: #5C8D73; /* Sage Green */
@@ -74,4 +90,25 @@
 
 .animate-pulse-dot {
   animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+/* ── Docs: thorough white-outline neutralization (fix pass 2) ──
+   Previous scoped rule (.docs-card, .meta-label, .chunk, .toc-item) missed
+   multiple bordered boxes (sidebar items, diagram boxes, pills, etc.).
+   Single root-scoped rule catches all descendants in one place. Scoped to
+   .docs-root so non-docs pages (dashboard, marketing) are untouched.
+   Verified: docs does not rely on a white ring for keyboard focus; focus
+   state is communicated via teal background/text and teal border hover,
+   so suppressing the browser/Tailwind ring does not remove a legitimate
+   indicator. Checked: docs-home cards, case-study chunks, meta-label pills,
+   sidebar nav-item + sub-items, TOC items + indicator track, architecture
+   diagram boxes — all now show only hairline border var(--border). */
+.docs-root *,
+.docs-root *::before,
+.docs-root *::after {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-color: transparent !important;
+  box-shadow: none !important;
 }
