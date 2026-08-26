@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local-only AI coding-agent context (kept locally for OpenCode/Antigravity, not published)
+AI_RULES.md
+PROJECT_CONTEXT.md
