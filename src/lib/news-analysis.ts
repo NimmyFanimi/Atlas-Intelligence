@@ -38,16 +38,24 @@ const DELAY_BETWEEN_CALLS_MS = 800;
 // articles per run while phase 2 only cleared 2, so unanalyzed articles
 // accumulated faster than they were processed (confirmed live on
 // 2026-08-27: 7 articles sitting unanalyzed, the oldest ~5 hours old).
-// Raised to 4 on 2026-08-27 after recomputing the real timeout math:
-// worst case is roughly 4 x (call time + 0.8s), which at a realistic
-// 3-4s per Gemini call lands around 17-21s, still comfortably under the
-// 30s ceiling even allowing for slower individual calls. This roughly
-// doubles throughput per run without meaningfully risking the timeout.
-// If the backlog still grows over time at this cap, the real fix is
-// increasing cron frequency (currently every 2-3 hours), not raising
-// this further, since pushing much past 4-5 starts eating the timeout
-// margin this constant exists to protect.
-const MAX_ARTICLES_PER_RUN = 4;
+//
+// Briefly raised to 4, then 3, on 2026-08-27 while chasing the backlog,
+// but two separate live production tests immediately surfaced the real
+// root cause: individual Gemini calls were averaging ~10.4s each (well
+// past the 3-4s originally assumed), causing 25-33% of calls to hit the
+// old 10s per-call abort timeout and fail outright, not a batch-size
+// problem at all. The per-call timeout was raised to 15s to match
+// reality (see callGeminiForAnalysis). With real per-call time now
+// closer to ~10-15s, 2 articles/run already approaches the 30s ceiling
+// in the worst case (2 x 15.8s = 31.6s), so this reverted back to the
+// original, proven-safe value of 2 rather than staying at 3 or 4.
+//
+// The actual fix for the backlog is NOT this constant, it's cron
+// frequency. If the backlog still grows at a safe cap of 2, increase how
+// often news-ingest runs (currently every 2-3 hours via cron-job.org),
+// since Gemini's real latency makes this constant a hard ceiling, not a
+// dial to tune upward.
+const MAX_ARTICLES_PER_RUN = 2;
 
 interface UnanalyzedArticle {
   id: string;
@@ -122,7 +130,15 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
     }),
-    signal: AbortSignal.timeout(10000),
+    // Was 10000ms. Two live production tests on 2026-08-27 showed real
+    // Gemini 3.6 Flash latency for this prompt averaging ~10.4s per call
+    // (back-calculated from total run duration minus timeout time), well
+    // above the 3-4s this constant was originally sized for. At 10s,
+    // roughly a quarter to a third of calls were legitimately still in
+    // flight when aborted, not actually broken, just slower than assumed.
+    // Raised to 15s to give real calls enough room to complete instead of
+    // killing them right at the observed average.
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!res.ok) {
