@@ -34,14 +34,11 @@ An institutional-grade market intelligence platform, built for Sales & Trading, 
 
 ```mermaid
 flowchart TB
-    subgraph sources["External data sources"]
-        direction LR
-        finnhub["Finnhub<br/><small>Indices, FX</small>"]
-        fred["FRED<br/><small>Rates, calendar</small>"]
-        eia["EIA<br/><small>Energy spot</small>"]
-        metals["Metals.dev<br/><small>Gold, Copper</small>"]
-        marketaux["Marketaux<br/><small>News</small>"]
-    end
+    finnhub["Finnhub<br/><small>Indices, FX</small>"]
+    fred["FRED<br/><small>Rates, calendar</small>"]
+    eia["EIA<br/><small>Energy spot</small>"]
+    metals["Metals.dev<br/><small>Gold, Copper</small>"]
+    marketaux["Marketaux<br/><small>News</small>"]
 
     cron["Cron ingestion routes<br/><small>market-snapshot · calendar-ingest · news-ingest · morning-brief</small>"]
     supabase[("Supabase<br/><small>Postgres, public read-only RLS</small>")]
@@ -55,6 +52,8 @@ flowchart TB
     cron --> supabase
     supabase --> frontend
 ```
+
+The five boxes at the top are the external data sources (Finnhub, FRED, EIA, Metals.dev, Marketaux).
 
 A scheduled job writes snapshots into Supabase on a fixed cadence (5 minutes for prices, daily for calendar/FRED data, every 2 hours for news). The frontend never calls Finnhub, FRED, EIA, Metals.dev, or Marketaux directly, it only ever reads from Supabase. This keeps every free-tier rate limit comfortably safe regardless of visitor traffic, and gives historical price data as a side effect of snapshotting rather than a separate feature to build.
 
