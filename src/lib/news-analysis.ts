@@ -33,13 +33,21 @@ const DELAY_BETWEEN_CALLS_MS = 800;
 // if the scheduler gives up waiting before then. A real run on 2026-08-04
 // returned 200 from Vercel but still got marked "Failed (timeout)" by
 // cron-job.org, confirming the server-side response was taking too long
-// even with the previous cap of 5. Lowered to 2 here: worst case is
-// roughly 2 x (call time + 0.8s), which stays comfortably under 30s even
-// if individual Gemini calls run slow (3-4s each). Any backlog beyond
-// this cap simply gets picked up on the next scheduled run (every 2
-// hours), since the query is always "find rows where
-// ai_analysis IS NULL", not tied to a specific run.
-const MAX_ARTICLES_PER_RUN = 2;
+// even with the previous cap of 5. Lowered to 2 at the time, but this
+// created a structural backlog: phase 1 can bring in up to 20 raw
+// articles per run while phase 2 only cleared 2, so unanalyzed articles
+// accumulated faster than they were processed (confirmed live on
+// 2026-08-27: 7 articles sitting unanalyzed, the oldest ~5 hours old).
+// Raised to 4 on 2026-08-27 after recomputing the real timeout math:
+// worst case is roughly 4 x (call time + 0.8s), which at a realistic
+// 3-4s per Gemini call lands around 17-21s, still comfortably under the
+// 30s ceiling even allowing for slower individual calls. This roughly
+// doubles throughput per run without meaningfully risking the timeout.
+// If the backlog still grows over time at this cap, the real fix is
+// increasing cron frequency (currently every 2-3 hours), not raising
+// this further, since pushing much past 4-5 starts eating the timeout
+// margin this constant exists to protect.
+const MAX_ARTICLES_PER_RUN = 4;
 
 interface UnanalyzedArticle {
   id: string;
@@ -154,12 +162,18 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
 }
 
 /**
- * Phase 2: finds all news_articles rows with ai_analysis IS NULL, runs
- * each through Gemini, and writes the result back. Processes articles
- * sequentially (not in parallel) with a delay between calls to respect
- * the free-tier RPM limit, this matters more here than in the earlier
- * comparison test since a real ingestion run could have more than a
- * couple of articles pending at once.
+ * Phase 2: finds news_articles rows with ai_analysis IS NULL, oldest
+ * published_at first, runs each through Gemini, and writes the result
+ * back. Processes articles sequentially (not in parallel) with a delay
+ * between calls to respect the free-tier RPM limit, this matters more
+ * here than in the earlier comparison test since a real ingestion run
+ * could have more than a couple of articles pending at once.
+ *
+ * The explicit oldest-first ordering matters: without it, Postgres does
+ * not guarantee which unanalyzed rows come back under a plain `.limit()`,
+ * so specific old articles could get starved indefinitely if newer
+ * unanalyzed rows keep winning an arbitrary ordering. Confirmed this was
+ * happening in production on 2026-08-27 before the ordering was added.
  *
  * A failure on one article is logged and skipped, not thrown, so one
  * bad Gemini response doesn't abort analysis for the rest of the batch.
@@ -175,6 +189,7 @@ export async function analyzeUnprocessedArticles(): Promise<{
     .from('news_articles')
     .select('id, title, description, source')
     .is('ai_analysis', null)
+    .order('published_at', { ascending: true })
     .limit(MAX_ARTICLES_PER_RUN);
 
   if (error) {
