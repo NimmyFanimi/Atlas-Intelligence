@@ -56,6 +56,18 @@ flowchart TB
 
 A scheduled job writes snapshots into Supabase on a fixed cadence (5 minutes for prices, daily for calendar/FRED data, every 2 hours for news). The frontend never calls Finnhub, FRED, EIA, Metals.dev, or Marketaux directly, it only ever reads from Supabase. This keeps every free-tier rate limit comfortably safe regardless of visitor traffic, and gives historical price data as a side effect of snapshotting rather than a separate feature to build.
 
+## How This Was Built
+
+I'm not a software engineer by training, this project is a solo build by a student, not a professional dev. I directed the entire build using AI coding agents (Claude for architecture, planning, and debugging; OpenCode running Kimi K2.7 and DeepSeek V4 for implementation) rather than writing every line by hand.
+
+What that split actually looked like in practice:
+
+- **I owned every architecture decision**: which five modules made V1 scope and which didn't, how ingestion should be structured to survive free-tier rate limits, when to abandon an approach (e.g. dropping ETF proxies for real commodity sourcing) and why.
+- **I found and diagnosed every real production bug**, then directed the fix: the FOMC phantom-event bug, the EIA key that looked saved but wasn't present at runtime, the Metals.dev quota burn, a PostgREST 1,000-row cap silently truncating sparse assets. None of these were caught by lint or a build log, they were caught by insisting on checking live, real data before calling anything done.
+- **AI agents handled implementation**: writing the code once a decision was made, translating a signed-off design mockup into components, mechanical refactors.
+
+I think this is worth being upfront about rather than glossing over. The judgment, debugging, and verification discipline are mine; the typing was largely delegated. If that's a dealbreaker for how you evaluate this project, that's a fair position to hold, but I'd rather you know the actual process than assume otherwise.
+
 ## Overview
 Atlas Intelligence is a modern finance dashboard that answers four core questions:
 1. What happened in the markets?
@@ -70,7 +82,7 @@ Atlas Intelligence is a modern finance dashboard that answers four core question
 - **Economic Calendar:** Upcoming macro releases with plain-English explanations.
 - **Commodities Intelligence:** Deep-dive module for WTI, Brent, Natural Gas, Gold, and Copper, with real spot/LME pricing, historical charts, and asset-tagged related news.
 
-## Architecture
+## Tech Stack & Data Flow
 - **Stack:** Next.js (App Router), TypeScript, Tailwind CSS v4, Supabase (PostgreSQL), Recharts.
 - **Data Ingestion:** Cron jobs fetch data from Finnhub, FRED, EIA, and Metals.dev, saving snapshots to Supabase. The frontend strictly reads from Supabase to stay well under API rate limits.
   - Indices and FX use liquid US ETF proxies on Finnhub for live, flickering price updates (see Budget Workarounds).
