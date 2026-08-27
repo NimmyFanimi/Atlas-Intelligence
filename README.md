@@ -34,15 +34,15 @@ An institutional-grade market intelligence platform, built for Sales & Trading, 
 
 ```mermaid
 flowchart TB
-    finnhub["Finnhub<br/><small>Indices, FX</small>"]
-    fred["FRED<br/><small>Rates, calendar</small>"]
-    eia["EIA<br/><small>Energy spot</small>"]
-    metals["Metals.dev<br/><small>Gold, Copper</small>"]
-    marketaux["Marketaux<br/><small>News</small>"]
+    finnhub["Finnhub\nIndices, FX"]
+    fred["FRED\nRates, calendar"]
+    eia["EIA\nEnergy spot"]
+    metals["Metals.dev\nGold, Copper"]
+    marketaux["Marketaux\nNews"]
 
-    cron["Cron ingestion routes<br/><small>market-snapshot · calendar-ingest · news-ingest · morning-brief</small>"]
-    supabase[("Supabase<br/><small>Postgres, public read-only RLS</small>")]
-    frontend["Next.js frontend<br/><small>Reads only from Supabase, never calls external APIs directly</small>"]
+    cron["Cron ingestion routes\nmarket-snapshot, calendar-ingest, news-ingest, morning-brief"]
+    supabase[("Supabase\nPostgres, public read-only RLS")]
+    frontend["Next.js frontend\nReads only from Supabase, never calls external APIs directly"]
 
     finnhub --> cron
     fred --> cron

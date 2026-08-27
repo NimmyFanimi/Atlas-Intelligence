@@ -43,3 +43,6 @@ next-env.d.ts
 # local-only AI coding-agent context (kept locally for OpenCode/Antigravity, not published)
 AI_RULES.md
 PROJECT_CONTEXT.md
+
+# local-only scripts that touch secrets, never meant for the public repo
+trigger-news-cron.ps1
