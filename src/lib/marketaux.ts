@@ -81,6 +81,36 @@ function checkIsMacro(title: string, description: string, keywords: string = '')
   return MACRO_KEYWORDS.some((keyword) => haystack.includes(keyword));
 }
 
+// Filename/path patterns that indicate a site-brand logo, twitter-card
+// default, or favicon-style placeholder rather than a real article photo.
+// Confirmed live on 2026-08-27: stockmarketwatch.com and gurufocus.com both
+// supply a generic branded icon as image_url on articles that have no real
+// photo, rather than omitting image_url entirely. This filter treats those
+// as if no image were provided, so the frontend's asset-tinted gradient
+// fallback shows instead of a generic logo tile.
+//
+// Deliberately pattern-based, not "same URL seen more than once", since
+// some sources legitimately reuse a real photo across a recurring editorial
+// segment (e.g. a "Gold prices today" daily column reusing one template
+// image) and that repetition is intentional, not a placeholder problem.
+// Tune this list over time based on what still slips through in real use.
+const GENERIC_IMAGE_PATTERNS = [
+  'logo',
+  'icon-1000x700',
+  'twitter_card',
+  'twitter-card',
+  'og-image',
+  'og_image',
+  'favicon',
+  'placeholder',
+];
+
+function isGenericPlaceholderImage(imageUrl: string | null | undefined): boolean {
+  if (!imageUrl) return false;
+  const lower = imageUrl.toLowerCase();
+  return GENERIC_IMAGE_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+
 /**
  * Derives a single article-level sentiment score by averaging the
  * sentiment_score across all entities Marketaux returned for the article.
@@ -167,7 +197,7 @@ export async function fetchMarketauxArticles(
       title: article.title,
       description: description || null,
       url: article.url,
-      imageUrl: article.image_url || null,
+      imageUrl: isGenericPlaceholderImage(article.image_url) ? null : (article.image_url || null),
       source: article.source || null,
       publishedAt: article.published_at,
       sentimentScore,

@@ -11,6 +11,8 @@
 // badge and time helpers, plus the asset-class fallback style) rather than
 // duplicating them.
 
+import { useState } from 'react';
+
 import {
   NewsArticle,
   NewsAiAnalysis,
@@ -85,16 +87,32 @@ export default function NewsDetailPanel({
 
   const heroFallback = fallbackStyleFor(article, assetClassById);
 
+  // Same real-world issue as NewsCard: some image_url values 404, get
+  // CORS-blocked, or the source removes the image after publication.
+  // Previously the fallback gradient only applied when image_url was
+  // entirely absent (line below used to read `article.image_url ?
+  // undefined : heroFallback`), so a present-but-broken URL rendered
+  // nothing but a blank hero behind the browser's broken-image icon.
+  // Tracking load failure lets the fallback apply in both cases: no URL,
+  // or a URL that exists but didn't actually load.
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(article.image_url) && !imageFailed;
+
   return (
     <div className="flex flex-col bg-[#101114] border border-[#2A2D31]">
       {/* Hero */}
       <div
         className="relative w-full aspect-[21/9] overflow-hidden"
-        style={article.image_url ? undefined : heroFallback}
+        style={showImage ? undefined : heroFallback}
       >
-        {article.image_url && (
+        {showImage && (
           // eslint-disable-next-line @next/next/no-img-element -- remote third-party image, unknown domain/dimensions
-          <img src={article.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img
+            src={article.image_url!}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+            onError={() => setImageFailed(true)}
+          />
         )}
 
         {/* bottom scrim so overlay content stays readable */}

@@ -12,6 +12,8 @@
 // supplied by the parent feed/detail later. If omitted, pills fall back to a
 // truncated asset id so the card still renders gracefully.
 
+import { useState } from 'react';
+
 export interface NewsAiAnalysis {
   what_happened?: string | null;
   why_it_matters?: string | null;
@@ -219,6 +221,20 @@ export default function NewsCard({ article, assetsById, assetClassById, onSelect
   const overflowCount = Math.max(0, matched.length - TICKER_PILL_LIMIT);
   const fallbackStyle = fallbackStyleFor(article, assetClassById);
 
+  // Some article image_url values 404, get CORS-blocked, or are simply
+  // removed from the source's server after the fact (this is a real,
+  // ongoing thing with third-party news images, not an ingestion bug).
+  // Without this, a failed <img> falls back to the browser's default
+  // broken-image icon rendered on top of the fallbackStyle gradient below,
+  // which reads as a visibly broken card. Tracking load failure in state
+  // lets the broken <img> be removed entirely once it fails, so the
+  // already-designed asset-tinted gradient fallback shows through clean
+  // instead of sitting behind a broken-image glyph. Confirmed live via
+  // real image_url values in production (e.g. stockmarketwatch.com,
+  // gurufocus.com sources) on 2026-08-27.
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(article.image_url) && !imageFailed;
+
   const teaser =
     (typeof article.ai_analysis?.why_it_matters === 'string' &&
       article.ai_analysis.why_it_matters.trim()) ||
@@ -240,13 +256,14 @@ export default function NewsCard({ article, assetsById, assetClassById, onSelect
     >
       {/* 1. Image */}
       <div className="relative aspect-video w-full overflow-hidden" style={fallbackStyle}>
-        {article.image_url ? (
+        {showImage ? (
           // eslint-disable-next-line @next/next/no-img-element -- remote third-party image, unknown domain/dimensions
           <img
-            src={article.image_url}
+            src={article.image_url!}
             alt=""
             loading="lazy"
             className="h-full w-full object-cover"
+            onError={() => setImageFailed(true)}
           />
         ) : null}
 
