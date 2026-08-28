@@ -49,7 +49,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <Sidebar
           isCollapsed={false}
           setIsCollapsed={setIsCollapsed}
-          onNavigate={() => setIsMobileDrawerOpen(false)}
+          onNavigate={() => setTimeout(() => setIsMobileDrawerOpen(false), 0)}
         />
       </div>
     </div>
