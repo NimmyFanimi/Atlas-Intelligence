@@ -101,7 +101,7 @@ export default function Toc({ items, containerId }: TocProps) {
   }, [activeIdx]);
 
   return (
-    <div className="w-[200px] flex-shrink-0 py-10 pr-5 border-l border-[var(--border)]">
+    <div className="hidden lg:flex w-[200px] flex-shrink-0 py-10 pr-5 border-l border-[var(--border)] flex-col">
       <div className="sticky top-10 flex pl-5">
         <div ref={trackRef} className="toc-track relative w-px bg-[var(--border)] mr-4 flex-shrink-0">
           <div

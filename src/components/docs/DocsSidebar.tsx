@@ -45,7 +45,11 @@ const NAV: NavItem[] = [
   { label: 'Design', href: '/docs/design' },
 ];
 
-export default function DocsSidebar() {
+interface DocsSidebarProps {
+  onNavigate?: () => void;
+}
+
+export default function DocsSidebar({ onNavigate }: DocsSidebarProps) {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
@@ -76,14 +80,17 @@ export default function DocsSidebar() {
         // Update hash without triggering a page jump
         history.pushState(null, '', `${href}#${id}`);
       }
+      // Close mobile drawer if present (deferred via caller's setTimeout if needed)
+      onNavigate?.();
     }
     // else: let Link navigate normally; target page will handle hash scroll on mount via its own Toc logic
+    // onNavigate will be called via the Link's onClick for cross-page navigation
   }
 
   return (
     <aside className="w-[240px] flex-shrink-0 bg-[var(--surface-1)] border-r border-[var(--border)] flex flex-col gap-6 px-5 py-7 overflow-y-auto scrollbar-none">
       {/* Brand, now hidden when DocsTopBar is present, but kept for direct sidebar use; links to /docs */}
-      <Link href="/docs" className="flex items-center gap-[9px] no-underline outline-none focus:outline-none focus-visible:outline-none">
+      <Link href="/docs" onClick={onNavigate} className="flex items-center gap-[9px] no-underline outline-none focus:outline-none focus-visible:outline-none">
         <div className="w-6 h-6 rounded-[7px] bg-[var(--teal)] flex items-center justify-center flex-shrink-0">
           <svg viewBox="0 0 24 24" fill="none" className="w-[14px] h-[14px]">
             <path d="M5 16.5L12 6.5L19 16.5" stroke="#04241D" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
@@ -103,6 +110,7 @@ export default function DocsSidebar() {
             <div key={item.href}>
               <Link
                 href={item.href}
+                onClick={onNavigate}
                 className={`flex items-center justify-between px-[10px] py-[9px] rounded-[8px] text-[14px] no-underline outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 transition-colors duration-150 ${
                   active ? 'bg-[var(--teal-dim)] text-[var(--teal-light)] font-medium' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]'
                 }`}
@@ -124,7 +132,11 @@ export default function DocsSidebar() {
                     <Link
                       key={sub.label}
                       href={`${item.href}#${sub.id}`}
-                      onClick={(e) => handleSubClick(e, item.href, sub.id)}
+                      onClick={(e) => {
+                        handleSubClick(e, item.href, sub.id);
+                        // If handleSubClick didn't already close (cross-page nav), close drawer
+                        if (pathname !== item.href) onNavigate?.();
+                      }}
                       className={`block px-[10px] py-[7px] rounded-[7px] text-[13px] no-underline outline-none focus:outline-none focus-visible:outline-none cursor-pointer transition-colors duration-150 ${active ? 'text-[var(--teal-light)] hover:text-[var(--teal-light)] hover:bg-[var(--surface-2)]' : 'text-[var(--text-muted)]'}`}
                     >
                       {sub.label}

@@ -18,7 +18,7 @@ export default function DataFlowDiagram() {
   return (
     <div className="my-8 max-w-[680px]">
       {/* Sources row */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {sources.map((s) => (
           <div
             key={s.label}
@@ -43,7 +43,7 @@ export default function DataFlowDiagram() {
       </div>
 
       {/* Arrow down from sources */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         {sources.map((_, i) => (
           <div key={i} className="flex justify-center py-2">
             <span className="text-[11px] text-[var(--text-muted)]">↓</span>

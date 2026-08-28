@@ -17,7 +17,7 @@ export default function DocsLandingPage() {
       >
         ← Back to site
       </Link>
-      <div className="flex-1 overflow-y-auto flex items-start justify-center p-8 pt-10">
+      <div className="flex-1 overflow-y-auto flex items-start justify-center p-5 md:p-8 pt-10">
         <div className="w-full max-w-[960px]">
           <div className="docs-hero-title text-[30px] font-semibold tracking-[-0.02em] mb-[10px]">Atlas Docs</div>
           <div className="docs-hero-sub text-[15px] text-[var(--text-secondary)] max-w-[560px] mb-7">
@@ -25,7 +25,7 @@ export default function DocsLandingPage() {
           </div>
 
           <div className="docs-cards-label text-[13px] font-semibold text-[var(--teal-light)] mb-3">Start here</div>
-          <div className="docs-cards grid gap-4 max-w-[880px]" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div className="docs-cards grid gap-4 max-w-[880px] grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {cards.map((c) => (
               <Link
                 key={c.title}
