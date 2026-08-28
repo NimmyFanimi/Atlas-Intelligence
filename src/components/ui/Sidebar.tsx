@@ -186,7 +186,7 @@ interface SidebarProps {
 export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
   return (
     <aside
-      className={`h-full flex flex-col bg-[var(--color-background)] border-r border-[var(--color-border)] select-none overflow-visible transition-[width] duration-200 ease-in-out z-30 ${
+      className={`h-full flex flex-col flex-shrink-0 bg-[var(--color-background)] border-r border-[var(--color-border)] select-none overflow-visible transition-[width] duration-200 ease-in-out z-30 ${
         isCollapsed ? 'w-16' : 'w-64'
       }`}
     >
