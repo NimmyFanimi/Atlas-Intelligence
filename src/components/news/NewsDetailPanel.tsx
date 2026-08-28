@@ -117,7 +117,7 @@ export default function NewsDetailPanel({
 
         {/* bottom scrim so overlay content stays readable */}
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 pointer-events-none"
           style={{
             background:
               'linear-gradient(180deg, rgba(10,11,13,0) 30%, rgba(10,11,13,0.85) 88%, #101114 100%)',
@@ -136,7 +136,7 @@ export default function NewsDetailPanel({
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="absolute top-[18px] right-[18px] inline-flex items-center justify-center w-8 h-8 text-[#E8E9EB] border border-[#E8E9EB]/[0.22] bg-[#0A0B0D]/[0.55] hover:bg-[#0A0B0D]/80 transition-colors duration-150 cursor-pointer"
+          className="absolute top-[18px] right-[18px] z-10 inline-flex items-center justify-center w-8 h-8 text-[#E8E9EB] border border-[#E8E9EB]/[0.22] bg-[#0A0B0D]/[0.55] hover:bg-[#0A0B0D]/80 transition-colors duration-150 cursor-pointer"
         >
           <CloseIcon />
         </button>

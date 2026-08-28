@@ -91,15 +91,17 @@ interface NavItemProps {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   isCollapsed: boolean;
+  onNavigate?: () => void;
 }
 
-function NavItem({ href, icon: Icon, label, isCollapsed }: NavItemProps) {
+function NavItem({ href, icon: Icon, label, isCollapsed, onNavigate }: NavItemProps) {
   const pathname = usePathname();
   const isActive = href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
 
   return (
     <Link
       href={href}
+      onClick={onNavigate}
       className={`relative flex items-center px-4 py-2.5 my-0.5 group transition-all duration-150 rounded-[var(--radius-sm)] border border-transparent outline-none ${
         isActive
           ? 'bg-[var(--color-surface)] text-[var(--color-primary)] font-semibold'
@@ -181,9 +183,10 @@ function SectionSeparator({ label, isCollapsed }: { label: string; isCollapsed: 
 interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
+  onNavigate?: () => void;
 }
 
-export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
+export default function Sidebar({ isCollapsed, setIsCollapsed, onNavigate }: SidebarProps) {
   return (
     <aside
       className={`h-full flex flex-col flex-shrink-0 bg-[var(--color-background)] border-r border-[var(--color-border)] select-none overflow-visible transition-[width] duration-200 ease-in-out z-30 ${
@@ -198,6 +201,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
           <Link
             href="/"
             aria-label="Back to home"
+            onClick={onNavigate}
             className="flex items-center gap-3 rounded-[var(--radius-sm)] transition-opacity duration-150 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-0"
           >
             <div className="w-8 h-8 flex items-center justify-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-sm)] flex-shrink-0">
@@ -227,6 +231,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
               icon={item.icon}
               label={item.label}
               isCollapsed={isCollapsed}
+              onNavigate={onNavigate}
             />
           ))}
         </nav>
@@ -265,11 +270,11 @@ export default function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
 
       {/* ── Pinned footer: Settings + Collapse toggle ── */}
       <div className="flex-shrink-0 flex flex-col gap-0.5 p-2 border-t border-[var(--color-border)]/30 bg-[var(--color-background)] z-40">
-        <NavItem href="/settings" icon={Settings} label="Settings" isCollapsed={isCollapsed} />
+        <NavItem href="/settings" icon={Settings} label="Settings" isCollapsed={isCollapsed} onNavigate={onNavigate} />
         <button
           type="button"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="relative flex items-center px-4 py-2.5 my-0.5 w-full text-[var(--color-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-surface)]/50 transition-all duration-150 rounded-[var(--radius-sm)] border border-transparent cursor-pointer group text-left"
+          className="hidden md:flex relative items-center px-4 py-2.5 my-0.5 w-full text-[var(--color-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-surface)]/50 transition-all duration-150 rounded-[var(--radius-sm)] border border-transparent cursor-pointer group text-left"
         >
           {isCollapsed ? (
             <ChevronRight className="w-4 h-4 flex-shrink-0" />
