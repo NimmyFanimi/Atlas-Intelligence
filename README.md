@@ -121,7 +121,7 @@ Unlike other assets, US 10Y and US 2Y Rates don't use ETF proxies. Bond ETFs tra
 ## Roadmap (Post-V1)
 - [ ] **Data Retention Policy:** Implement a scheduled cleanup job to prune old `market_snapshots` rows, keeping the database lean as snapshots accumulate indefinitely.
 - [ ] **Real Rate Change Calculation:** Compute `change_pct`/`change_abs` for US 10Y and US 2Y by diffing the previous day's FRED snapshot at read time, rather than showing "n/a."
-- [ ] **Mobile-Responsive Pass:** Full mobile layout and interaction design (deferred from V1 by design decision, see Known Limitations).
+- [✓] **Mobile-Responsive Pass:** Full mobile layout and interaction design (deferred from V1 by design decision, see Known Limitations).
 - [ ] **Fixed Income Tools:** Add advanced bond yield and duration analytics.
 - [ ] **FX Carry Calculators:** Tools for calculating forward points and carry trade returns.
 - [ ] **Geopolitical Map:** Visualizing regional risks and overlapping market impacts.
