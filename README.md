@@ -115,8 +115,6 @@ Unlike other assets, US 10Y and US 2Y Rates don't use ETF proxies. Bond ETFs tra
 - **EIA data lag:** WTI/Brent prices can be up to ~8 days old (see Data Sourcing above). Confirmed as expected EIA behavior via three independent sources, not a bug.
 - **Rate change (%, $) shows "n/a" for US 10Y / US 2Y:** FRED doesn't provide an intraday or day-over-day change figure for these series, so the change columns are honestly left blank rather than showing a fabricated or misleading number. Computing a real change (e.g. by diffing the previous day's stored snapshot) is a legitimate future enhancement, not a defect in the current build.
 - **FOMC dates are sourced from an unofficial third-party mirror**, not FRED or the Federal Reserve directly, since no official free API for FOMC meeting dates exists. Clearly labeled in the UI.
-- **Desktop-first by design:** Atlas is deliberately optimized for desktop, since that's how recruiters review portfolio projects. A dedicated mobile-responsive pass is planned for a future version rather than V1.
-- **Cross-browser testing:** Verified working in Chrome, Firefox, and Edge. Not yet tested in Safari.
 
 ## Roadmap (Post-V1)
 - [ ] **Data Retention Policy:** Implement a scheduled cleanup job to prune old `market_snapshots` rows, keeping the database lean as snapshots accumulate indefinitely.
