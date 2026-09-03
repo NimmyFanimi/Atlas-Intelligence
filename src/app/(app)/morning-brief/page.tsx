@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import MorningBriefView from '@/components/morning-brief/MorningBriefView';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export interface MoverEntry {
   symbol: string;
