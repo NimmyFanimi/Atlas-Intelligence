@@ -155,6 +155,19 @@ ${calendarLines}
 Write the briefing now.`;
 }
 
+function isRetryableGeminiError(status: number | null): boolean {
+  if (status === null) {
+    return true;
+  }
+  if (status === 429) {
+    return true;
+  }
+  if (status >= 500 && status <= 599) {
+    return true;
+  }
+  return false;
+}
+
 async function callGemini(prompt: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -163,29 +176,62 @@ async function callGemini(prompt: string): Promise<string> {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-  });
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAYS_MS = [2000, 4000];
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Gemini call failed: ${res.status} ${body}`);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const isLastAttempt = attempt === MAX_ATTEMPTS;
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!isLastAttempt && isRetryableGeminiError(null)) {
+        const delayMs = RETRY_DELAYS_MS[attempt - 1];
+        console.warn(
+          `callGemini: attempt ${attempt} failed with network error: ${message}. Retrying in ${delayMs}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err instanceof Error ? err : new Error(message);
+    }
+
+    if (!res.ok) {
+      const body = await res.text();
+      const error = new Error(`Gemini call failed: ${res.status} ${body}`);
+      if (!isLastAttempt && isRetryableGeminiError(res.status)) {
+        const delayMs = RETRY_DELAYS_MS[attempt - 1];
+        console.warn(
+          `callGemini: attempt ${attempt} failed with status ${res.status}: ${body}. Retrying in ${delayMs}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw error;
+    }
+
+    const data = await res.json();
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (typeof rawText !== 'string') {
+      throw new Error(
+        `Gemini response had unexpected shape: ${JSON.stringify(data)}`
+      );
+    }
+
+    return rawText.trim();
   }
 
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (typeof rawText !== 'string') {
-    throw new Error(
-      `Gemini response had unexpected shape: ${JSON.stringify(data)}`
-    );
-  }
-
-  return rawText.trim();
+  // Unreachable: the loop above always returns or throws.
+  throw new Error('Gemini call failed: retries exhausted without a result');
 }
 
 export async function generateMorningBrief(): Promise<{
