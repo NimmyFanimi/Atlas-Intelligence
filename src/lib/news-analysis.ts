@@ -57,6 +57,15 @@ const DELAY_BETWEEN_CALLS_MS = 800;
 // dial to tune upward.
 const MAX_ARTICLES_PER_RUN = 2;
 
+// This controls whether article analysis calls run concurrently (faster,
+// higher throughput, slightly more complex) or one-at-a-time (slower,
+// simplest, safest). Set to 'sequential' to instantly revert to the
+// original one-at-a-time behavior if concurrency ever causes problems
+// (e.g. rate limit errors, unexpected timing behavior). The sequential
+// path is the original, previously-verified-working logic, kept
+// intentionally unchanged as a safe fallback.
+const RUN_MODE: 'parallel' | 'sequential' = 'parallel';
+
 interface UnanalyzedArticle {
   id: string;
   title: string;
@@ -72,6 +81,13 @@ interface AnalystNote {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function logPossibleRateLimit(runId: string, articleId: string, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/429|quota|rate limit/i.test(message)) {
+    console.warn(`[news-analysis] run=${runId} article=${articleId} LIKELY RATE LIMIT ISSUE: ${message}`);
+  }
 }
 
 // Same analyst-persona prompt verified in the Gemini vs Groq comparison
@@ -216,32 +232,90 @@ export async function analyzeUnprocessedArticles(): Promise<{
   let analyzed = 0;
   let failed = 0;
 
-  for (const article of articles) {
-    try {
-      const analysis = await callGeminiForAnalysis(article);
+  const runId = new Date().toISOString();
+  const runStartMs = Date.now();
 
-      const { error: updateError } = await supabaseAdmin
-        .from('news_articles')
-        .update({
-          ai_analysis: analysis,
-          ai_model_used: GEMINI_MODEL,
-        })
-        .eq('id', article.id);
+  if (RUN_MODE === 'sequential') {
+    console.log(`[news-analysis] run=${runId} mode=sequential articles=${articles.length} starting`);
 
-      if (updateError) {
-        throw new Error(`Failed to write analysis for article ${article.id}: ${updateError.message}`);
+    for (const article of articles) {
+      console.log(`[news-analysis] run=${runId} article=${article.id} starting`);
+      const articleStartMs = Date.now();
+      try {
+        const analysis = await callGeminiForAnalysis(article);
+
+        const { error: updateError } = await supabaseAdmin
+          .from('news_articles')
+          .update({
+            ai_analysis: analysis,
+            ai_model_used: GEMINI_MODEL,
+          })
+          .eq('id', article.id);
+
+        if (updateError) {
+          throw new Error(`Failed to write analysis for article ${article.id}: ${updateError.message}`);
+        }
+
+        analyzed += 1;
+        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=success`);
+      } catch (err) {
+        // Log and continue, this article stays null and gets retried next run.
+        console.error(`Analysis failed for article ${article.id}:`, err);
+        failed += 1;
+        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=failed`);
+        logPossibleRateLimit(runId, article.id, err);
       }
 
-      analyzed += 1;
-    } catch (err) {
-      // Log and continue, this article stays null and gets retried next run.
-      console.error(`Analysis failed for article ${article.id}:`, err);
-      failed += 1;
+      // Respect the free-tier RPM limit even under a larger backlog.
+      await sleep(DELAY_BETWEEN_CALLS_MS);
     }
 
-    // Respect the free-tier RPM limit even under a larger backlog.
-    await sleep(DELAY_BETWEEN_CALLS_MS);
+    console.log(`[news-analysis] run=${runId} mode=sequential totalDuration=${Date.now() - runStartMs}ms found=${articles.length} analyzed=${analyzed} failed=${failed} done`);
+
+    return { found: articles.length, analyzed, failed };
   }
+
+  console.log(`[news-analysis] run=${runId} mode=parallel articles=${articles.length} starting`);
+
+  const settled = await Promise.allSettled(
+    articles.map(async (article) => {
+      console.log(`[news-analysis] run=${runId} article=${article.id} starting`);
+      const articleStartMs = Date.now();
+      try {
+        const analysis = await callGeminiForAnalysis(article);
+
+        const { error: updateError } = await supabaseAdmin
+          .from('news_articles')
+          .update({
+            ai_analysis: analysis,
+            ai_model_used: GEMINI_MODEL,
+          })
+          .eq('id', article.id);
+
+        if (updateError) {
+          throw new Error(`Failed to write analysis for article ${article.id}: ${updateError.message}`);
+        }
+
+        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=success`);
+        return article.id;
+      } catch (err) {
+        console.error(`Analysis failed for article ${article.id}:`, err);
+        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=failed`);
+        logPossibleRateLimit(runId, article.id, err);
+        throw err;
+      }
+    })
+  );
+
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      analyzed += 1;
+    } else {
+      failed += 1;
+    }
+  }
+
+  console.log(`[news-analysis] run=${runId} mode=parallel totalDuration=${Date.now() - runStartMs}ms found=${articles.length} analyzed=${analyzed} failed=${failed} done`);
 
   return { found: articles.length, analyzed, failed };
 }
