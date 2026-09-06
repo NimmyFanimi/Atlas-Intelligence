@@ -57,48 +57,59 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const startedAt = Date.now();
-
-  let ingestResult: { fetched: number; inserted: number };
   try {
-    ingestResult = await ingestRawArticles();
+    if (!isAuthorized(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const startedAt = Date.now();
+
+    let ingestResult: { fetched: number; inserted: number };
+    try {
+      ingestResult = await ingestRawArticles();
+    } catch (err) {
+      console.error('news-ingest: phase 1 (ingestRawArticles) failed:', err);
+      return NextResponse.json(
+        {
+          error: 'Ingestion phase failed',
+          detail: err instanceof Error ? err.message : String(err),
+        },
+        { status: 500 }
+      );
+    }
+
+    let analysisResult: { found: number; analyzed: number; failed: number };
+    try {
+      analysisResult = await analyzeUnprocessedArticles();
+    } catch (err) {
+      // Phase 1 already succeeded and committed its writes. Report phase 2's
+      // failure but still return the phase 1 result rather than a bare 500,
+      // since real data was written and that's useful to know.
+      console.error('news-ingest: phase 2 (analyzeUnprocessedArticles) failed:', err);
+      return NextResponse.json(
+        {
+          ingest: ingestResult,
+          analysisError: err instanceof Error ? err.message : String(err),
+        },
+        { status: 207 } // Multi-status: partial success
+      );
+    }
+
+    const durationMs = Date.now() - startedAt;
+
+    return NextResponse.json({
+      ingest: ingestResult,
+      analysis: analysisResult,
+      durationMs,
+    });
   } catch (err) {
-    console.error('news-ingest: phase 1 (ingestRawArticles) failed:', err);
+    console.error('[news-ingest] unhandled error:', err);
     return NextResponse.json(
       {
-        error: 'Ingestion phase failed',
+        error: 'Unhandled news-ingest error',
         detail: err instanceof Error ? err.message : String(err),
       },
       { status: 500 }
     );
   }
-
-  let analysisResult: { found: number; analyzed: number; failed: number };
-  try {
-    analysisResult = await analyzeUnprocessedArticles();
-  } catch (err) {
-    // Phase 1 already succeeded and committed its writes. Report phase 2's
-    // failure but still return the phase 1 result rather than a bare 500,
-    // since real data was written and that's useful to know.
-    console.error('news-ingest: phase 2 (analyzeUnprocessedArticles) failed:', err);
-    return NextResponse.json(
-      {
-        ingest: ingestResult,
-        analysisError: err instanceof Error ? err.message : String(err),
-      },
-      { status: 207 } // Multi-status: partial success
-    );
-  }
-
-  const durationMs = Date.now() - startedAt;
-
-  return NextResponse.json({
-    ingest: ingestResult,
-    analysis: analysisResult,
-    durationMs,
-  });
 }
