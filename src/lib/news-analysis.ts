@@ -138,16 +138,16 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
   let rawText: string;
   try {
     rawText = await callGeminiWithRetry(prompt, {
-      // Was 10000ms. Two live production tests on 2026-08-27 showed real
-      // Gemini 3.6 Flash latency for this prompt averaging ~10.4s per call
-      // (back-calculated from total run duration minus timeout time), well
-      // above the 3-4s this constant was originally sized for. At 10s,
-      // roughly a quarter to a third of calls were legitimately still in
-      // flight when aborted, not actually broken, just slower than assumed.
-      // Raised to 15s to give real calls enough room to complete instead of
-      // killing them right at the observed average. Applied per attempt
-      // inside the shared retry helper.
-      timeoutMs: 15000,
+      // Deliberately tighter than the shared defaults (15s/3 attempts).
+      // The original 15s/3-attempt budget was sized for a single isolated
+      // call, but this call site shares cron-job.org's hard 30-second
+      // wall-clock budget with the rest of the cron request (phase 1
+      // ingestion + Supabase writes), so its worst case must stay well
+      // under 30s: 8000 + 2000 + 8000 = 18000ms. Morning Brief has no
+      // such shared ceiling and keeps the fuller default budget.
+      timeoutMs: 8000,
+      maxAttempts: 2,
+      retryDelaysMs: [2000],
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

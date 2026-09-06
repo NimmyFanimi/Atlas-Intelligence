@@ -33,7 +33,7 @@ export function isRetryableGeminiError(status: number | null): boolean {
 
 export async function callGeminiWithRetry(
   prompt: string,
-  options?: { timeoutMs?: number }
+  options?: { timeoutMs?: number; maxAttempts?: number; retryDelaysMs?: number[] }
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -42,8 +42,11 @@ export async function callGeminiWithRetry(
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const isLastAttempt = attempt === MAX_ATTEMPTS;
+  const maxAttempts = options?.maxAttempts ?? MAX_ATTEMPTS;
+  const retryDelaysMs = options?.retryDelaysMs ?? RETRY_DELAYS_MS;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const isLastAttempt = attempt === maxAttempts;
 
     let res: Response;
     try {
@@ -60,7 +63,7 @@ export async function callGeminiWithRetry(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!isLastAttempt && isRetryableGeminiError(null)) {
-        const delayMs = RETRY_DELAYS_MS[attempt - 1];
+        const delayMs = retryDelaysMs[attempt - 1];
         console.warn(
           `callGeminiWithRetry: attempt ${attempt} failed with network error: ${message}. Retrying in ${delayMs}ms...`
         );
@@ -69,7 +72,7 @@ export async function callGeminiWithRetry(
       }
       const finalError = err instanceof Error ? err : new Error(message);
       console.error(
-        `[gemini-client] exhausted retries after ${MAX_ATTEMPTS} attempts: ${finalError.message}`
+        `[gemini-client] exhausted retries after ${maxAttempts} attempts: ${finalError.message}`
       );
       throw finalError;
     }
@@ -78,7 +81,7 @@ export async function callGeminiWithRetry(
       const body = await res.text();
       const error = new Error(`Gemini call failed: ${res.status} ${body}`);
       if (!isLastAttempt && isRetryableGeminiError(res.status)) {
-        const delayMs = RETRY_DELAYS_MS[attempt - 1];
+        const delayMs = retryDelaysMs[attempt - 1];
         console.warn(
           `callGeminiWithRetry: attempt ${attempt} failed with status ${res.status}: ${body}. Retrying in ${delayMs}ms...`
         );
@@ -86,7 +89,7 @@ export async function callGeminiWithRetry(
         continue;
       }
       console.error(
-        `[gemini-client] exhausted retries after ${MAX_ATTEMPTS} attempts: ${error.message}`
+        `[gemini-client] exhausted retries after ${maxAttempts} attempts: ${error.message}`
       );
       throw error;
     }
@@ -97,7 +100,7 @@ export async function callGeminiWithRetry(
     if (typeof rawText !== 'string') {
       const errorMessage = `Gemini response had unexpected shape: ${JSON.stringify(data)}`;
       console.error(
-        `[gemini-client] exhausted retries after ${MAX_ATTEMPTS} attempts: ${errorMessage}`
+        `[gemini-client] exhausted retries after ${maxAttempts} attempts: ${errorMessage}`
       );
       throw new Error(errorMessage);
     }
@@ -108,7 +111,7 @@ export async function callGeminiWithRetry(
   // Unreachable: the loop above always returns or throws.
   const exhaustedMessage = 'Gemini call failed: retries exhausted without a result';
   console.error(
-    `[gemini-client] exhausted retries after ${MAX_ATTEMPTS} attempts: ${exhaustedMessage}`
+    `[gemini-client] exhausted retries after ${maxAttempts} attempts: ${exhaustedMessage}`
   );
   throw new Error(exhaustedMessage);
 }
