@@ -15,6 +15,7 @@
 // null out ai_analysis for the rows you want redone, next run handles it.
 
 import { supabaseAdmin } from './supabase/admin';
+import { callGeminiWithRetry } from './gemini-client';
 
 const GEMINI_MODEL = 'gemini-3.6-flash';
 
@@ -132,43 +133,29 @@ Respond now with only the JSON object.`;
  * (currently: skip it, leave ai_analysis null, it'll be retried next run).
  */
 async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<AnalystNote> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY is not set');
-  }
-
   const prompt = buildAnalystPrompt(article);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-    // Was 10000ms. Two live production tests on 2026-08-27 showed real
-    // Gemini 3.6 Flash latency for this prompt averaging ~10.4s per call
-    // (back-calculated from total run duration minus timeout time), well
-    // above the 3-4s this constant was originally sized for. At 10s,
-    // roughly a quarter to a third of calls were legitimately still in
-    // flight when aborted, not actually broken, just slower than assumed.
-    // Raised to 15s to give real calls enough room to complete instead of
-    // killing them right at the observed average.
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Gemini call failed for article ${article.id}: ${res.status} ${body}`);
-  }
-
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (typeof rawText !== 'string') {
-    throw new Error(
-      `Gemini response for article ${article.id} had unexpected shape: ${JSON.stringify(data)}`
-    );
+  let rawText: string;
+  try {
+    rawText = await callGeminiWithRetry(prompt, {
+      // Was 10000ms. Two live production tests on 2026-08-27 showed real
+      // Gemini 3.6 Flash latency for this prompt averaging ~10.4s per call
+      // (back-calculated from total run duration minus timeout time), well
+      // above the 3-4s this constant was originally sized for. At 10s,
+      // roughly a quarter to a third of calls were legitimately still in
+      // flight when aborted, not actually broken, just slower than assumed.
+      // Raised to 15s to give real calls enough room to complete instead of
+      // killing them right at the observed average. Applied per attempt
+      // inside the shared retry helper.
+      timeoutMs: 15000,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes(article.id)) {
+      throw err;
+    }
+    const stripped = message.replace(/^Gemini call failed(?:: | with )/, '');
+    throw new Error(`Gemini call failed for article ${article.id}: ${stripped}`);
   }
 
   // Defensive: strip markdown code fences if the model added them despite
