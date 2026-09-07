@@ -18,6 +18,18 @@ const GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [2000, 4000];
 
+function buildGeminiUrl(apiKey: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+}
+
+function isDailyQuotaExhausted(status: number | null, bodyText: string): boolean {
+  if (status !== 429) {
+    return false;
+  }
+  const lowered = bodyText.toLowerCase();
+  return lowered.includes('resource_exhausted') || lowered.includes('perday');
+}
+
 export function isRetryableGeminiError(status: number | null): boolean {
   if (status === null) {
     return true;
@@ -39,11 +51,17 @@ export async function callGeminiWithRetry(
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not set');
   }
+  const fallbackApiKey = process.env.GEMINI_API_KEY_FALLBACK;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const url = buildGeminiUrl(apiKey);
+  const fallbackUrl = fallbackApiKey ? buildGeminiUrl(fallbackApiKey) : null;
 
   const maxAttempts = options?.maxAttempts ?? MAX_ATTEMPTS;
   const retryDelaysMs = options?.retryDelaysMs ?? RETRY_DELAYS_MS;
+
+  const requestBody = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+  });
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const isLastAttempt = attempt === maxAttempts;
@@ -53,9 +71,7 @@ export async function callGeminiWithRetry(
       res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
+        body: requestBody,
         ...(options?.timeoutMs !== undefined
           ? { signal: AbortSignal.timeout(options.timeoutMs) }
           : {}),
@@ -79,6 +95,47 @@ export async function callGeminiWithRetry(
 
     if (!res.ok) {
       const body = await res.text();
+      if (isDailyQuotaExhausted(res.status, body) && fallbackUrl) {
+        console.warn(
+          '[gemini-client] primary key quota exhausted, falling back to secondary key'
+        );
+        let fallbackRes: Response;
+        try {
+          fallbackRes = await fetch(fallbackUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: requestBody,
+            ...(options?.timeoutMs !== undefined
+              ? { signal: AbortSignal.timeout(options.timeoutMs) }
+              : {}),
+          });
+        } catch (fallbackErr) {
+          const fallbackMessage =
+            fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          const bothFailed = new Error(
+            `Gemini call failed on both primary and fallback keys: primary quota exhausted (${res.status} ${body}); fallback network error: ${fallbackMessage}`
+          );
+          console.error(`[gemini-client] ${bothFailed.message}`);
+          throw bothFailed;
+        }
+        if (!fallbackRes.ok) {
+          const fallbackBody = await fallbackRes.text();
+          const bothFailed = new Error(
+            `Gemini call failed on both primary and fallback keys: primary ${res.status} ${body}; fallback ${fallbackRes.status} ${fallbackBody}`
+          );
+          console.error(`[gemini-client] ${bothFailed.message}`);
+          throw bothFailed;
+        }
+        const fallbackData = await fallbackRes.json();
+        const fallbackText =
+          fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (typeof fallbackText !== 'string') {
+          const fallbackShapeMessage = `Gemini fallback key response had unexpected shape: ${JSON.stringify(fallbackData)}`;
+          console.error(`[gemini-client] ${fallbackShapeMessage}`);
+          throw new Error(fallbackShapeMessage);
+        }
+        return fallbackText.trim();
+      }
       const error = new Error(`Gemini call failed: ${res.status} ${body}`);
       if (!isLastAttempt && isRetryableGeminiError(res.status)) {
         const delayMs = retryDelaysMs[attempt - 1];
