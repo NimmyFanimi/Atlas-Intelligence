@@ -154,10 +154,50 @@ function matchAssetIds(
   return Array.from(matched);
 }
 
+// Single sequential call in phase 1, so a generous per-attempt timeout is
+// affordable: the route has a 60s maxDuration and cron-job.org enforces a
+// ~30s ceiling, and nothing else in phase 1 competes for that budget
+// (unlike the per-article Gemini calls in phase 2).
+// Budget is deliberately 2 attempts: worst case 12 + 1.5 + 12 = 25.5s,
+// which fits under the ~30s cron-job.org ceiling with margin for phase 1's
+// Supabase bookends. A 3rd attempt (40.5s worst case) would not fit.
+const MARKETAUX_TIMEOUT_MS = 12000;
+const MARKETAUX_MAX_ATTEMPTS = 2;
+// Backoff between attempt 1 and 2. Kept local to this function;
+// the Gemini client's retry helper is shaped for raw-text responses,
+// not parsed article lists, so sharing it isn't worth it for one call site.
+const MARKETAUX_RETRY_DELAYS_MS = [1500];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * True for fetch-level failures worth retrying: the AbortSignal.timeout
+ * case (DOMException TimeoutError) or a network failure where fetch throws
+ * before a response exists (undici surfaces those as TypeError).
+ * Deliberately narrow: HTTP statuses and JSON parse errors are handled
+ * separately and must not be retried implicitly here.
+ */
+function isRetryableMarketauxFetchError(err: unknown): boolean {
+  if (err instanceof TypeError) {
+    return true;
+  }
+  if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Fetches recent news from Marketaux for the given watchlist symbols and
  * returns articles mapped to Atlas's internal shape, ready for the
  * ingestRawArticles() write step.
+ *
+ * Retries up to 2 attempts on TimeoutError, network errors, or HTTP 5xx
+ * only. 429 (rate limit), 402 (quota), and other non-5xx statuses are
+ * terminal and thrown immediately, since retrying those cannot help and
+ * could compound quota usage.
  *
  * @param symbols - comma-separated Finnhub symbols to filter on, e.g. "SPY,QQQ,GLD"
  * @param assetsBySymbol - map of finnhub_symbol -> asset id (uppercase keys)
@@ -177,15 +217,44 @@ export async function fetchMarketauxArticles(
     symbols
   )}&filter_entities=true&language=en&limit=${limit}&api_token=${apiKey}`;
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Marketaux fetch failed: ${res.status} ${body}`);
+  let data: MarketauxResponse | null = null;
+
+  for (let attempt = 1; attempt <= MARKETAUX_MAX_ATTEMPTS; attempt++) {
+    const isLastAttempt = attempt === MARKETAUX_MAX_ATTEMPTS;
+
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(MARKETAUX_TIMEOUT_MS) });
+    } catch (err) {
+      if (!isRetryableMarketauxFetchError(err) || isLastAttempt) {
+        if (isRetryableMarketauxFetchError(err)) {
+          console.error(`[marketaux] exhausted retries after ${MARKETAUX_MAX_ATTEMPTS} attempts:`, err);
+        }
+        throw err;
+      }
+      await sleep(MARKETAUX_RETRY_DELAYS_MS[attempt - 1]);
+      continue;
+    }
+
+    if (!res.ok) {
+      const body = await res.text();
+      const httpError = new Error(`Marketaux fetch failed: ${res.status} ${body}`);
+      const isServerError = res.status >= 500 && res.status <= 599;
+      if (!isServerError || isLastAttempt) {
+        if (isServerError) {
+          console.error(`[marketaux] exhausted retries after ${MARKETAUX_MAX_ATTEMPTS} attempts:`, httpError);
+        }
+        throw httpError;
+      }
+      await sleep(MARKETAUX_RETRY_DELAYS_MS[attempt - 1]);
+      continue;
+    }
+
+    data = (await res.json()) as MarketauxResponse;
+    break;
   }
 
-  const data: MarketauxResponse = await res.json();
-
-  return (data.data || []).map((article) => {
+  return (data?.data || []).map((article) => {
     const description = article.description || '';
     const entities = article.entities || [];
     const matchedAssetIds = matchAssetIds(entities, assetsBySymbol);
