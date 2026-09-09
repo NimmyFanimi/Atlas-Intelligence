@@ -138,16 +138,24 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
   let rawText: string;
   try {
     rawText = await callGeminiWithRetry(prompt, {
-      // Deliberately tighter than the shared defaults (15s/3 attempts).
-      // The original 15s/3-attempt budget was sized for a single isolated
-      // call, but this call site shares cron-job.org's hard 30-second
-      // wall-clock budget with the rest of the cron request (phase 1
-      // ingestion + Supabase writes), so its worst case must stay well
-      // under 30s: 8000 + 2000 + 8000 = 18000ms. Morning Brief has no
-      // such shared ceiling and keeps the fuller default budget.
-      timeoutMs: 8000,
-      maxAttempts: 2,
-      retryDelaysMs: [2000],
+      // News Engine's cron-triggered analysis call. maxAttempts is 1 here
+      // (no same-key retry) because a real fallback key on a separate
+      // Google Cloud project is available and is a full substitute, not
+      // a degraded option, so any primary failure goes straight to
+      // fallback rather than retrying primary first. This call site
+      // shares cron-job.org's hard 30-second wall-clock budget with the
+      // rest of the cron request (phase 1 ingestion + Supabase writes),
+      // so worst case must stay well under 30s: 9000 (primary, single
+      // attempt) + 18000 (fallbackTimeoutMs, confirmed via isolated
+      // testing that the fallback key takes ~15s to respond) = 27000ms.
+      // Fallback calls are queued (see queueFallbackCall in
+      // gemini-client.ts), not concurrent, so this does not stack
+      // across articles running in parallel. Morning Brief has no such
+      // shared ceiling and keeps the fuller default budget.
+      timeoutMs: 9000,
+      maxAttempts: 1,
+      retryDelaysMs: [],
+      fallbackTimeoutMs: 18000,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

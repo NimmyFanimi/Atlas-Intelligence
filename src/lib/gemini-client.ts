@@ -45,7 +45,7 @@ export function isRetryableGeminiError(status: number | null): boolean {
 
 export async function callGeminiWithRetry(
   prompt: string,
-  options?: { timeoutMs?: number; maxAttempts?: number; retryDelaysMs?: number[] }
+  options?: { timeoutMs?: number; fallbackTimeoutMs?: number; maxAttempts?: number; retryDelaysMs?: number[] }
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -99,15 +99,14 @@ export async function callGeminiWithRetry(
         console.warn(
           '[gemini-client] primary key quota exhausted, falling back to secondary key'
         );
+        const fallbackTimeoutMs = options?.fallbackTimeoutMs ?? 10000;
         let fallbackRes: Response;
         try {
           fallbackRes = await fetch(fallbackUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: requestBody,
-            ...(options?.timeoutMs !== undefined
-              ? { signal: AbortSignal.timeout(options.timeoutMs) }
-              : {}),
+            signal: AbortSignal.timeout(fallbackTimeoutMs),
           });
         } catch (fallbackErr) {
           const fallbackMessage =
