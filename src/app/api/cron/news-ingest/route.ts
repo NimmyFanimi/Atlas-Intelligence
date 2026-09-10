@@ -18,6 +18,13 @@
 // Kimi security review as non-constant-time). Fixing that on the
 // existing route is a separate, already-tracked task; this new route
 // just doesn't introduce the same issue a second time.
+//
+// NOTE on SKIP_NEWS_INGESTION: temporary env var flag (not set by
+// default) used to pause phase 1 while working down an existing
+// backlog, without touching phase 2. Set to 'true' in Vercel env
+// vars to skip ingestion; unset or any other value runs normally.
+// Remove this flag once the backlog is cleared and it is no longer
+// needed, rather than leaving it as permanent dead code.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
@@ -64,18 +71,25 @@ export async function GET(request: NextRequest) {
 
     const startedAt = Date.now();
 
+    const skipIngestion = process.env.SKIP_NEWS_INGESTION === 'true';
+
     let ingestResult: { fetched: number; inserted: number };
-    try {
-      ingestResult = await ingestRawArticles();
-    } catch (err) {
-      console.error('news-ingest: phase 1 (ingestRawArticles) failed:', err);
-      return NextResponse.json(
-        {
-          error: 'Ingestion phase failed',
-          detail: err instanceof Error ? err.message : String(err),
-        },
-        { status: 500 }
-      );
+    if (skipIngestion) {
+      console.log('[news-ingest] phase 1 (ingestRawArticles) skipped: SKIP_NEWS_INGESTION=true');
+      ingestResult = { fetched: 0, inserted: 0 };
+    } else {
+      try {
+        ingestResult = await ingestRawArticles();
+      } catch (err) {
+        console.error('news-ingest: phase 1 (ingestRawArticles) failed:', err);
+        return NextResponse.json(
+          {
+            error: 'Ingestion phase failed',
+            detail: err instanceof Error ? err.message : String(err),
+          },
+          { status: 500 }
+        );
+      }
     }
 
     let analysisResult: { found: number; analyzed: number; failed: number };
