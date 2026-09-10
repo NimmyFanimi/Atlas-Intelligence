@@ -142,20 +142,25 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
       // (no same-key retry) because a real fallback key on a separate
       // Google Cloud project is available and is a full substitute, not
       // a degraded option, so any primary failure goes straight to
-      // fallback rather than retrying primary first. This call site
-      // shares cron-job.org's hard 30-second wall-clock budget with the
-      // rest of the cron request (phase 1 ingestion + Supabase writes),
-      // so worst case must stay well under 30s: 9000 (primary, single
-      // attempt) + 18000 (fallbackTimeoutMs, confirmed via isolated
-      // testing that the fallback key takes ~15s to respond) = 27000ms.
-      // Fallback calls are queued (see queueFallbackCall in
-      // gemini-client.ts), not concurrent, so this does not stack
-      // across articles running in parallel. Morning Brief has no such
-      // shared ceiling and keeps the fuller default budget.
+      // fallback rather than retrying primary first. Fallback calls are
+      // serialized via queueFallbackCall in gemini-client.ts (concurrent
+      // fallback calls were found to intermittently hang until timeout),
+      // so this call site's worst case is no longer simple parallel
+      // math. With MAX_ARTICLES_PER_RUN articles all needing fallback,
+      // worst case is roughly: 9000 (primary, single attempt) +
+      // (MAX_ARTICLES_PER_RUN * 6000) (serialized fallback timeouts,
+      // since each article's fallback call may need to wait behind
+      // every other queued fallback call ahead of it). At
+      // MAX_ARTICLES_PER_RUN = 2, worst case is 9000 + 12000 = 21000ms,
+      // comfortably under cron-job.org's 30-second ceiling. If
+      // MAX_ARTICLES_PER_RUN increases, this math must be rechecked,
+      // since fallback time now scales linearly with article count due
+      // to serialization. Morning Brief has no such shared ceiling and
+      // keeps the fuller default budget.
       timeoutMs: 9000,
       maxAttempts: 1,
       retryDelaysMs: [],
-      fallbackTimeoutMs: 18000,
+      fallbackTimeoutMs: 6000,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

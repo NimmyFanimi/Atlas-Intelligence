@@ -1,0 +1,36 @@
+name: News Engine Cron
+
+on:
+  schedule:
+    # Every 2 hours, matching the existing cron-job.org schedule.
+    # Cron times are UTC. GitHub's scheduler can have a few minutes of
+    # jitter around the top of the hour under load, so this is offset
+    # by 7 minutes rather than running exactly on the hour.
+    - cron: '7 */2 * * *'
+  workflow_dispatch: {}
+    # Allows manually triggering a run from the GitHub Actions tab,
+    # useful for testing without waiting for the schedule.
+
+jobs:
+  trigger-news-ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call news-ingest route
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://atlas-intelligence-six.vercel.app/api/cron/news-ingest)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP status: $http_code"
+          echo "Response body: $body"
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            if [ "$http_code" != "207" ]; then
+              echo "News ingest failed with status $http_code"
+              exit 1
+            fi
+            echo "Partial success (207), phase 1 succeeded, phase 2 had an error. Not failing the workflow."
+          fi
