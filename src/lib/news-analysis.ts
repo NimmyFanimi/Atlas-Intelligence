@@ -137,31 +137,28 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
 
   let rawText: string;
   try {
-    rawText = await callGeminiWithRetry(prompt, {
-      // News Engine's cron-triggered analysis call. maxAttempts is 1 here
-      // (no same-key retry) because a real fallback key on a separate
-      // Google Cloud project is available and is a full substitute, not
-      // a degraded option, so any primary failure goes straight to
-      // fallback rather than retrying primary first. Fallback calls are
-      // serialized via queueFallbackCall in gemini-client.ts (concurrent
-      // fallback calls were found to intermittently hang until timeout),
-      // so this call site's worst case is no longer simple parallel
-      // math. With MAX_ARTICLES_PER_RUN articles all needing fallback,
-      // worst case is roughly: 9000 (primary, single attempt) +
-      // (MAX_ARTICLES_PER_RUN * 6000) (serialized fallback timeouts,
-      // since each article's fallback call may need to wait behind
-      // every other queued fallback call ahead of it). At
-      // MAX_ARTICLES_PER_RUN = 2, worst case is 9000 + 12000 = 21000ms,
-      // comfortably under cron-job.org's 30-second ceiling. If
-      // MAX_ARTICLES_PER_RUN increases, this math must be rechecked,
-      // since fallback time now scales linearly with article count due
-      // to serialization. Morning Brief has no such shared ceiling and
-      // keeps the fuller default budget.
-      timeoutMs: 9000,
-      maxAttempts: 1,
-      retryDelaysMs: [],
-      fallbackTimeoutMs: 6000,
-    });
+    rawText = await queueGeminiCall(() =>
+      callGeminiWithRetry(prompt, {
+        // News Engine's cron-triggered analysis call, now running under
+        // GitHub Actions (no 30-second ceiling; route's maxDuration is 60s).
+        // The entire call (primary attempt + fallback if needed) is
+        // serialized via queueGeminiCall above, because concurrent Gemini
+        // calls were found to intermittently hang on both primary and
+        // fallback keys. timeoutMs raised to 15000 (from the old
+        // cron-job.org-constrained 9000) since there is no tight shared
+        // budget to protect anymore. Worst case per article is roughly
+        // 15000 (primary) + 6000 (fallback, if needed) = 21000ms, and with
+        // MAX_ARTICLES_PER_RUN articles fully serialized, total worst case
+        // is roughly MAX_ARTICLES_PER_RUN * 21000ms. At MAX_ARTICLES_PER_RUN
+        // = 2, that's 42000ms, under the route's 60s maxDuration but with
+        // limited margin, if MAX_ARTICLES_PER_RUN increases this needs
+        // rechecking against maxDuration.
+        timeoutMs: 15000,
+        maxAttempts: 1,
+        retryDelaysMs: [],
+        fallbackTimeoutMs: 6000,
+      })
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes(article.id)) {
@@ -191,6 +188,21 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
   }
 
   return parsed;
+}
+
+// Concurrent calls to callGeminiWithRetry were found to intermittently
+// hang until timeout on BOTH the primary and fallback Gemini keys (see
+// isolated concurrent test results from 2026-09-10). Serializing all
+// Gemini calls here (not just fallback calls) avoids this. This queue
+// is local to news-analysis.ts rather than gemini-client.ts because
+// Morning Brief (which also uses gemini-client.ts) does not run
+// concurrent calls and should not be forced to serialize unnecessarily.
+let geminiCallQueue: Promise<unknown> = Promise.resolve();
+
+function queueGeminiCall<T>(fn: () => Promise<T>): Promise<T> {
+  const result = geminiCallQueue.then(fn, fn);
+  geminiCallQueue = result.catch(() => undefined);
+  return result;
 }
 
 /**
