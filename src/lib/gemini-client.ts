@@ -101,13 +101,13 @@ async function attemptFallback(
 
 export async function callGeminiWithRetry(
   prompt: string,
-  options?: { timeoutMs?: number; fallbackTimeoutMs?: number; maxAttempts?: number; retryDelaysMs?: number[] }
+  options?: { timeoutMs?: number; fallbackTimeoutMs?: number; maxAttempts?: number; retryDelaysMs?: number[]; apiKey?: string; fallbackApiKey?: string }
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = options?.apiKey ?? process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not set');
   }
-  const fallbackApiKey = process.env.GEMINI_API_KEY_FALLBACK;
+  const fallbackApiKey = options?.fallbackApiKey ?? process.env.GEMINI_API_KEY_FALLBACK;
 
   const url = buildGeminiUrl(apiKey);
   const fallbackUrl = fallbackApiKey ? buildGeminiUrl(fallbackApiKey) : null;

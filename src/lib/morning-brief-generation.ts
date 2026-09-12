@@ -180,7 +180,12 @@ export async function generateMorningBrief(): Promise<{
 
     const prompt = buildMorningBriefPrompt({ movers, news, calendarEvents });
 
-    const generated = await callGeminiWithRetry(prompt);
+    const morningBriefApiKey = process.env.GEMINI_API_KEY_MORNING_BRIEF;
+    if (!morningBriefApiKey) {
+      throw new Error('GEMINI_API_KEY_MORNING_BRIEF is not set');
+    }
+
+    const generated = await callGeminiWithRetry(prompt, { apiKey: morningBriefApiKey });
     const content = `${generated}\n\n- Atlas`;
 
     const { error: upsertError } = await supabaseAdmin
