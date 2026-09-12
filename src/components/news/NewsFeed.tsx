@@ -14,9 +14,10 @@
 // backdrop click, or the Escape key.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import NewsCard, { NewsArticle } from './NewsCard';
+import NewsCard, { NewsArticle, NewsAiAnalysis } from './NewsCard';
 import NewsDetailPanel from './NewsDetailPanel';
 import type { NewsFeedData } from '@/lib/news';
+import { fetchArticleAnalysis } from '@/lib/data/newsAnalysis';
 
 type ViewMode = 'unified' | 'split';
 
@@ -129,7 +130,21 @@ export default function NewsFeed({ data }: NewsFeedProps) {
   const articles = useMemo(() => data?.articles ?? [], [data?.articles]);
   const assetsById = useMemo(() => data?.assetsById ?? {}, [data?.assetsById]);
   const assetClassById = useMemo(() => data?.assetClassById ?? {}, [data?.assetClassById]);
-  const selectedArticle = articles.find((a) => a.id === selectedId) ?? null;
+
+  // Fresh ai_analysis values fetched client-side for articles that were still
+  // pending in the ISR-cached list, keyed by article id so a refresh for one
+  // article never affects any other.
+  const [analysisOverrides, setAnalysisOverrides] = useState<
+    Record<string, { ai_analysis: NewsAiAnalysis; ai_model_used: string | null }>
+  >({});
+
+  const cachedSelectedArticle = articles.find((a) => a.id === selectedId) ?? null;
+  // Merge any client-side refresh into the local copy passed to the modal, so
+  // NewsDetailPanel needs no prop or rendering changes.
+  const selectedArticle =
+    cachedSelectedArticle && selectedId && analysisOverrides[selectedId]
+      ? { ...cachedSelectedArticle, ...analysisOverrides[selectedId] }
+      : cachedSelectedArticle;
 
   const openArticle = useCallback((id: string, section: string) => {
     setSourceSection(section);
@@ -137,6 +152,38 @@ export default function NewsFeed({ data }: NewsFeedProps) {
   }, []);
 
   const closeModal = useCallback(() => setSelectedId(null), []);
+
+  // One-shot refetch when the modal opens, only for articles whose cached
+  // ai_analysis is still null. If the row has since been analyzed, the fresh
+  // value is merged above and the modal re-renders with it. No polling, no
+  // refetch loop, no subscription. A still-null result or a fetch error simply
+  // leaves the existing cached (pending) state in place.
+  useEffect(() => {
+    if (!selectedId) return;
+    const cached = articles.find((a) => a.id === selectedId) ?? null;
+    if (!cached || cached.ai_analysis) return;
+    if (analysisOverrides[selectedId]) return;
+    let cancelled = false;
+    fetchArticleAnalysis(selectedId)
+      .then((result) => {
+        if (cancelled) return;
+        if (result?.ai_analysis) {
+          setAnalysisOverrides((prev) => ({
+            ...prev,
+            [selectedId]: {
+              ai_analysis: result.ai_analysis as NewsAiAnalysis,
+              ai_model_used: result.ai_model_used,
+            },
+          }));
+        }
+      })
+      .catch((err) => {
+        console.warn('[NewsFeed] article analysis refetch failed, using cached state:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, articles, analysisOverrides]);
 
   // Close on Escape while the modal is open.
   useEffect(() => {
