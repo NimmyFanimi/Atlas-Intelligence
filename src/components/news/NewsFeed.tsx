@@ -13,11 +13,11 @@
 // interaction pattern. Closing happens via the panel's close button, a
 // backdrop click, or the Escape key.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import NewsCard, { NewsArticle, NewsAiAnalysis } from './NewsCard';
 import NewsDetailPanel from './NewsDetailPanel';
 import type { NewsFeedData } from '@/lib/news';
-import { fetchArticleAnalysis } from '@/lib/data/newsAnalysis';
+import { fetchArticleAnalysis, fetchRecentArticles } from '@/lib/data/newsAnalysis';
 
 type ViewMode = 'unified' | 'split';
 
@@ -127,9 +127,56 @@ export default function NewsFeed({ data }: NewsFeedProps) {
   // grid, otherwise the id of the split-view section it belongs to.
   const [sourceSection, setSourceSection] = useState<string>('__all');
 
-  const articles = useMemo(() => data?.articles ?? [], [data?.articles]);
+  // Articles inserted by the news cron after ISR generation, merged in once
+  // on mount by the effect below. They become normal members of articles,
+  // so modal, split view, nav, and fallbacks need no special casing.
+  const [addedArticles, setAddedArticles] = useState<NewsArticle[]>([]);
+  // Mount guard so the recent fetch runs at most once per page load, and
+  // only after server data is available (data can be null while loading).
+  const fetchedRecentRef = useRef(false);
+
+  const articles = useMemo(() => {
+    const base = data?.articles ?? [];
+    if (addedArticles.length === 0) return base;
+    const seen = new Set(base.map((a) => a.id));
+    const fresh = addedArticles.filter((a) => !seen.has(a.id));
+    if (fresh.length === 0) return base;
+    return [...fresh, ...base].sort(
+      (a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+    );
+  }, [data?.articles, addedArticles]);
   const assetsById = useMemo(() => data?.assetsById ?? {}, [data?.assetsById]);
   const assetClassById = useMemo(() => data?.assetClassById ?? {}, [data?.assetClassById]);
+
+  // One-shot list refresh on mount: fetch a small recent batch and prepend
+  // any ids not already in the cached list, sorted by published_at desc.
+  // Additive rows only, never updates existing rows. No interval, no polling,
+  // no refetch on focus, no subscription. A later refresh or remount picks
+  // up ISR state normally.
+  useEffect(() => {
+    if (!data || fetchedRecentRef.current) return;
+    fetchedRecentRef.current = true;
+    let cancelled = false;
+    const knownIds = new Set((data.articles ?? []).map((a) => a.id));
+    fetchRecentArticles(10)
+      .then((recent) => {
+        if (cancelled || !recent) return;
+        const genuinelyNew = recent.filter((a) => !knownIds.has(a.id));
+        if (genuinelyNew.length === 0) return;
+        setAddedArticles((prev) => {
+          const seen = new Set([...knownIds, ...prev.map((a) => a.id)]);
+          const toAdd = genuinelyNew.filter((a) => !seen.has(a.id));
+          if (toAdd.length === 0) return prev;
+          return [...prev, ...toAdd];
+        });
+      })
+      .catch(() => {
+        // fetchRecentArticles returns null on error, so this is only a safety net.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
 
   // Fresh ai_analysis values fetched client-side for articles that were still
   // pending in the ISR-cached list, keyed by article id so a refresh for one
