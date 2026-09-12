@@ -2,11 +2,11 @@ name: News Engine Cron
 
 on:
   schedule:
-    # Every 2 hours, matching the existing cron-job.org schedule.
+    # Every 3 hours, matching the existing cron-job.org schedule.
     # Cron times are UTC. GitHub's scheduler can have a few minutes of
     # jitter around the top of the hour under load, so this is offset
     # by 7 minutes rather than running exactly on the hour.
-    - cron: '7 */2 * * *'
+    - cron: '7 */3 * * *'
   workflow_dispatch: {}
     # Allows manually triggering a run from the GitHub Actions tab,
     # useful for testing without waiting for the schedule.
