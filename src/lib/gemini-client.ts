@@ -55,6 +55,50 @@ function queueFallbackCall<T>(fn: () => Promise<T>): Promise<T> {
   return result;
 }
 
+async function attemptFallback(
+  fallbackUrl: string,
+  requestBody: string,
+  fallbackTimeoutMs: number,
+  primaryFailureDescription: string
+): Promise<string> {
+  return await queueFallbackCall(async () => {
+    let fallbackRes: Response;
+    try {
+      fallbackRes = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody,
+        signal: AbortSignal.timeout(fallbackTimeoutMs),
+      });
+    } catch (fallbackErr) {
+      const fallbackMessage =
+        fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      const bothFailed = new Error(
+        `Gemini call failed on both primary and fallback keys: ${primaryFailureDescription}; fallback network error: ${fallbackMessage}`
+      );
+      console.error(`[gemini-client] ${bothFailed.message}`);
+      throw bothFailed;
+    }
+    if (!fallbackRes.ok) {
+      const fallbackBody = await fallbackRes.text();
+      const bothFailed = new Error(
+        `Gemini call failed on both primary and fallback keys: ${primaryFailureDescription}; fallback ${fallbackRes.status} ${fallbackBody}`
+      );
+      console.error(`[gemini-client] ${bothFailed.message}`);
+      throw bothFailed;
+    }
+    const fallbackData = await fallbackRes.json();
+    const fallbackText =
+      fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof fallbackText !== 'string') {
+      const fallbackShapeMessage = `Gemini fallback key response had unexpected shape: ${JSON.stringify(fallbackData)}`;
+      console.error(`[gemini-client] ${fallbackShapeMessage}`);
+      throw new Error(fallbackShapeMessage);
+    }
+    return fallbackText.trim();
+  });
+}
+
 export async function callGeminiWithRetry(
   prompt: string,
   options?: { timeoutMs?: number; fallbackTimeoutMs?: number; maxAttempts?: number; retryDelaysMs?: number[] }
@@ -90,6 +134,19 @@ export async function callGeminiWithRetry(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (isRetryableGeminiError(null) && fallbackUrl) {
+        console.warn(
+          '[gemini-client] primary key timed out, falling back to secondary key'
+        );
+        const fallbackTimeoutMs = options?.fallbackTimeoutMs ?? 6000;
+        const primaryFailureDescription = `primary network error: ${message}`;
+        return await attemptFallback(
+          fallbackUrl,
+          requestBody,
+          fallbackTimeoutMs,
+          primaryFailureDescription
+        );
+      }
       if (!isLastAttempt && isRetryableGeminiError(null)) {
         const delayMs = retryDelaysMs[attempt - 1];
         console.warn(
@@ -112,42 +169,13 @@ export async function callGeminiWithRetry(
           '[gemini-client] primary key quota exhausted, falling back to secondary key'
         );
         const fallbackTimeoutMs = options?.fallbackTimeoutMs ?? 6000;
-        return await queueFallbackCall(async () => {
-          let fallbackRes: Response;
-          try {
-            fallbackRes = await fetch(fallbackUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: requestBody,
-              signal: AbortSignal.timeout(fallbackTimeoutMs),
-            });
-          } catch (fallbackErr) {
-            const fallbackMessage =
-              fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-            const bothFailed = new Error(
-              `Gemini call failed on both primary and fallback keys: primary quota exhausted (${res.status} ${body}); fallback network error: ${fallbackMessage}`
-            );
-            console.error(`[gemini-client] ${bothFailed.message}`);
-            throw bothFailed;
-          }
-          if (!fallbackRes.ok) {
-            const fallbackBody = await fallbackRes.text();
-            const bothFailed = new Error(
-              `Gemini call failed on both primary and fallback keys: primary ${res.status} ${body}; fallback ${fallbackRes.status} ${fallbackBody}`
-            );
-            console.error(`[gemini-client] ${bothFailed.message}`);
-            throw bothFailed;
-          }
-          const fallbackData = await fallbackRes.json();
-          const fallbackText =
-            fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (typeof fallbackText !== 'string') {
-            const fallbackShapeMessage = `Gemini fallback key response had unexpected shape: ${JSON.stringify(fallbackData)}`;
-            console.error(`[gemini-client] ${fallbackShapeMessage}`);
-            throw new Error(fallbackShapeMessage);
-          }
-          return fallbackText.trim();
-        });
+        const primaryFailureDescription = `primary quota exhausted (${res.status} ${body})`;
+        return await attemptFallback(
+          fallbackUrl,
+          requestBody,
+          fallbackTimeoutMs,
+          primaryFailureDescription
+        );
       }
       const error = new Error(`Gemini call failed: ${res.status} ${body}`);
       if (!isLastAttempt && isRetryableGeminiError(res.status)) {
