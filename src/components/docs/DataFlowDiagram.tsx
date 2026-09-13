@@ -9,10 +9,10 @@ import React from 'react';
 export default function DataFlowDiagram() {
   const sources = [
     { label: 'Finnhub', sub: 'quotes', color: 'teal' },
-    { label: 'FRED', sub: 'rates & releases', color: 'teal' },
-    { label: 'EIA', sub: 'WTI / Brent / Gas', color: 'blue' },
-    { label: 'Metals.dev', sub: 'Gold / Copper', color: 'purple' },
-    { label: 'Marketaux', sub: 'news + sentiment', color: 'blue' },
+    { label: 'FRED', sub: 'rates & releases', color: 'blue' },
+    { label: 'EIA', sub: 'WTI / Brent / Gas', color: 'teal' },
+    { label: 'Metals.dev', sub: 'Gold / Copper', color: 'teal' },
+    { label: 'Marketaux', sub: 'news + sentiment', color: 'purple' },
   ];
 
   return (
