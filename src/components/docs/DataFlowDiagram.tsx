@@ -24,7 +24,7 @@ export default function DataFlowDiagram() {
             key={s.label}
             className={`rounded-[10px] border px-3 py-4 text-center outline-none focus:outline-none focus-visible:outline-none shadow-none ring-0 ${
               s.color === 'teal'
-                ? 'bg-[rgba(13,148,136,0.10)] border-[var(--teal)]/30'
+                ? 'bg-[rgba(13,148,136,0.18)] border-[var(--teal)]/45'
                 : s.color === 'blue'
                   ? 'bg-[rgba(59,130,246,0.08)] border-[rgba(59,130,246,0.25)]'
                   : 'bg-[rgba(139,92,246,0.08)] border-[rgba(139,92,246,0.25)]'
@@ -63,7 +63,7 @@ export default function DataFlowDiagram() {
       </div>
 
       {/* Supabase */}
-      <div className="mx-auto max-w-[420px] rounded-[10px] border border-[var(--teal)]/30 bg-[rgba(13,148,136,0.10)] px-5 py-4 text-center outline-none focus:outline-none focus-visible:outline-none shadow-none ring-0">
+      <div className="mx-auto max-w-[420px] rounded-[10px] border border-[var(--teal)]/45 bg-[rgba(13,148,136,0.18)] px-5 py-4 text-center outline-none focus:outline-none focus-visible:outline-none shadow-none ring-0">
         <div className="font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--teal-light)]">SUPABASE (PostgreSQL)</div>
         <div className="mt-1 font-mono text-[12px] text-[var(--text-secondary)]">assets, market_snapshots, news_articles, calendar_events, morning_briefs</div>
         <div className="mt-1 font-mono text-[10px] text-[var(--text-muted)]">RLS public read, composite indexes, 500 MB free tier guard</div>
