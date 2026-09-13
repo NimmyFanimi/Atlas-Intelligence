@@ -61,6 +61,18 @@ export default function ModulesPage() {
             number legibly, so it was removed there rather than kept broken. Image fallback uses a 5 color palette keyed to asset class (teal indices, purple
             FX, pink rates, coral commodities, grey macro) so a null image still hints at the story type.
           </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            Each article&apos;s sentiment is shown as a needle-and-arc gauge called the Sentimeter, on a fixed scale from -1 to +1. A reading near +1 signals a strongly positive or bullish framing, near -1 signals strongly negative or bearish, and a reading near zero signals neutral or mixed sentiment.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            Marketaux doesn&apos;t provide a single sentiment score per article, it provides one per tagged entity within the article. When an article mentions three assets, Marketaux returns three separate entity-level scores, not one overall figure. Atlas derives the number shown on the Sentimeter by averaging those entity-level scores, excluding any nulls.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            When an article has no scored entities, the Sentimeter shows a dimmed, neutral-centered needle rather than fabricating a number, the same honesty principle applied everywhere else in Atlas, no real number, no invented one either.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            Worth reading the Sentimeter as a rough signal, not a precise measurement. It&apos;s a derived average across whatever entities Marketaux happened to tag, not a single ground-truth sentiment judgment Marketaux calculated for the article as a whole.
+          </p>
         </section>
 
         <section id="sec-brief" className="chunk mb-14 scroll-mt-6">
