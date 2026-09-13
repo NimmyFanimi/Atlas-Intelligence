@@ -6,6 +6,7 @@ const tocItems = [
   { id: 'sec-fomc', label: 'The FOMC event that fired every day' },
   { id: 'sec-copper', label: 'Copper up 35,000%' },
   { id: 'sec-postgrest', label: 'The assets that went missing' },
+  { id: 'sec-news-reliability', label: 'The News Engine that kept almost working' },
 ];
 
 export default function DataIntegrityPage() {
@@ -64,7 +65,7 @@ export default function DataIntegrityPage() {
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] leading-7">
             <strong className="text-[var(--text-primary)] font-medium">Fix:</strong> {` `}Removed release_id 101 from{' '}
-            <span className="font-mono text-[13px] text-[var(--text-primary)]">TRACKED_RELEASES</span> entirely and added the-calendar.net as a clearly labeled
+            <span className="font-mono text-[13px] text-[var(--text-primary)]">TRACKED_RELEASES</span> entirely and added the-calendar.net as a clearly labelled
             unofficial source (with an &quot;Unofficial source&quot; pill and tooltip in the UI), plus isolated error handling so a failure there never blocks CPI, NFP, GDP, or PCE.
           </p>
         </section>
@@ -124,7 +125,7 @@ export default function DataIntegrityPage() {
             <strong className="text-[var(--text-primary)] font-medium">Removing the ceiling:</strong> {` `}The real fix wasn&apos;t another timeout tweak, it was migrating the cron trigger off cron-job.org entirely, onto a GitHub Actions scheduled workflow. Free, since Actions minutes are unlimited on a public repo, and with no meaningful timeout ceiling at all. This wasn&apos;t done to fix one specific failure, it was done because every fix up to that point kept being shaped by a constraint that no longer needed to exist.
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
-            <strong className="text-[var(--text-primary)] font-medium">Two hangs, same shape:</strong> {` `}With the ceiling gone, two further bugs surfaced that had likely been there all along, just masked by everything else failing first. Concurrent calls to Gemini&apos;s fallback API key intermittently hung until timeout, proven by writing an isolated script that fired two calls at once and reproduced the hang on demand, not by guessing from production logs. Fixed with a serializing queue around the fallback call. Then the same hang turned up on the primary key too, proven the same way, and fixed with a second, separate queue, kept in a different file specifically because Morning Brief shares the underlying client code and doesn&apos;t have this concurrency problem, so it shouldn&apos;t be forced to serialize unnecessarily.
+            <strong className="text-[var(--text-primary)] font-medium">Two hangs, same shape:</strong> {` `}With the ceiling gone, two further bugs surfaced that had likely been there all along, just masked by everything else failing first. Concurrent calls to Gemini&apos;s fallback API key intermittently hung until timeout, proven by writing an isolated script that fired two calls at once and reproduced the hang on demand, not by guessing from production logs. Fixed with a serialising queue around the fallback call. Then the same hang turned up on the primary key too, proven the same way, and fixed with a second, separate queue, kept in a different file specifically because Morning Brief shares the underlying client code and doesn&apos;t have this concurrency problem, so it shouldn&apos;t be forced to serialise unnecessarily.
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
             <strong className="text-[var(--text-primary)] font-medium">The gap concurrency didn&apos;t fix:</strong> {` `}A third failure still got through. A primary key timeout has no code path to the fallback key at all, its fallback logic was gated entirely on a 429 quota response, a genuine network timeout was caught earlier and just failed outright. Found by rereading the actual current code rather than trusting a remembered version of it, then fixed by unifying both failure surfaces through one shared fallback helper. This one comes with an honest caveat, it&apos;s verified correct by code review and a clean production deploy, but the exact failure it targets hasn&apos;t yet been observed firing live and succeeding, since forcing a timeout on demand isn&apos;t something worth doing just to watch a fix work.

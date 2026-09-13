@@ -58,7 +58,7 @@ export default function ModulesPage() {
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
             The &quot;Sentimeter&quot; gauge (needle plus arc plus numeric readout, teal only) appears only in the full screen modal. The card is too small to render the
-            number legibly, so it was removed there rather than kept broken. Image fallback uses a 5 color palette keyed to asset class (teal indices, purple
+            number legibly, so it was removed there rather than kept broken. Image fallback uses a 5 colour palette keyed to asset class (teal indices, purple
             FX, pink rates, coral commodities, grey macro) so a null image still hints at the story type.
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
@@ -68,7 +68,7 @@ export default function ModulesPage() {
             Marketaux doesn&apos;t provide a single sentiment score per article, it provides one per tagged entity within the article. When an article mentions three assets, Marketaux returns three separate entity-level scores, not one overall figure. Atlas derives the number shown on the Sentimeter by averaging those entity-level scores, excluding any nulls.
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
-            When an article has no scored entities, the Sentimeter shows a dimmed, neutral-centered needle rather than fabricating a number, the same honesty principle applied everywhere else in Atlas, no real number, no invented one either.
+            When an article has no scored entities, the Sentimeter shows a dimmed, neutral-centred needle rather than fabricating a number, the same honesty principle applied everywhere else in Atlas, no real number, no invented one either.
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
             Worth reading the Sentimeter as a rough signal, not a precise measurement. It&apos;s a derived average across whatever entities Marketaux happened to tag, not a single ground-truth sentiment judgment Marketaux calculated for the article as a whole.
@@ -98,7 +98,7 @@ export default function ModulesPage() {
             <span className="font-mono text-[13px] text-[var(--text-primary)]">release_id</span>. The fetcher uses{' '}
             <span className="font-mono text-[13px] text-[var(--text-primary)]">sort_order=desc and limit=20</span> and takes the last future dated row, because
             ascending plus limit 1000 never reaches present day for high frequency releases like FOMC (3,748 entries). FOMC dates themselves are not from FRED at
-            all. They come from the calendar.net unofficial mirror and are labeled &quot;Unofficial source&quot; in the UI. Importance is the left accent bar
+            all. They come from the calendar.net unofficial mirror and are labelled &quot;Unofficial source&quot; in the UI. Importance is the left accent bar
             (teal opacity by level). Status is the right pill (Confirmed versus Date TBD), never the reserved sage and coral price direction tokens.
           </p>
         </section>

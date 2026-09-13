@@ -9,7 +9,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const pathname = usePathname();
 
-  // Landing /docs has its own centered shell — don't wrap it with sidebar chrome
+  // Landing /docs has its own centred shell — don't wrap it with sidebar chrome
   if (pathname === '/docs') {
     return <>{children}</>;
   }

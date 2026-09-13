@@ -40,6 +40,7 @@ const NAV: NavItem[] = [
       { label: 'The FOMC event that fired every day', id: 'sec-fomc' },
       { label: 'Copper up 35,000%', id: 'sec-copper' },
       { label: 'The assets that went missing', id: 'sec-postgrest' },
+      { label: 'The News Engine that kept almost working', id: 'sec-news-reliability' },
     ],
   },
   { label: 'Design', href: '/docs/design' },

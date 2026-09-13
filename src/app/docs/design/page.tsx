@@ -45,12 +45,12 @@ export default function DesignPage() {
       </section>
 
       <section className="chunk mb-14 scroll-mt-6 max-w-[620px]">
-        <h2 className="text-[19px] font-semibold tracking-[-0.01em] mb-[14px]">Color with discipline</h2>
+        <h2 className="text-[19px] font-semibold tracking-[-0.01em] mb-[14px]">Colour with discipline</h2>
         <p className="text-[var(--text-secondary)] leading-7 mb-3">
           Up is sage <span className="font-mono text-[13px] text-[var(--text-primary)]">#5C8D73</span>, down is dusty coral{' '}
           <span className="font-mono text-[13px] text-[var(--text-primary)]">#C36B67</span>, deliberately desaturated after a too saturated stoplight pass. They
           are reserved exclusively for price direction, never reused for calendar importance or sentiment. Calendar importance is the left accent bar in teal
-          opacity (high 100 percent, medium 45 percent, low 15 percent). Sentiment &quot;Sentimeter&quot; gauge is teal from dim to bright with the numeric readout centered under the
+          opacity (high 100 percent, medium 45 percent, low 15 percent). Sentiment &quot;Sentimeter&quot; gauge is teal from dim to bright with the numeric readout centred under the
           needle, not a traffic light gradient that would collide with moves.
         </p>
         <p className="text-[var(--text-secondary)] leading-7">
@@ -63,9 +63,9 @@ export default function DesignPage() {
       <section className="chunk mb-14 scroll-mt-6 max-w-[620px]">
         <h2 className="text-[19px] font-semibold tracking-[-0.01em] mb-[14px]">Detail that compounds</h2>
         <p className="text-[var(--text-secondary)] leading-7 mb-3">
-          Percentage changes render as small filled pill badges (solid sage and coral and grey, near white text). Absolute change stays plain colored text. The
+          Percentage changes render as small filled pill badges (solid sage and coral and grey, near white text). Absolute change stays plain coloured text. The
           pill was a weight decision from polish, specifically so a 0.12 percent and a 4.3 percent do not read with the same visual mass. Sparklines carry a flat
-          12 percent filled area under the line in the line own color, just enough to give a 1.6 px stroke weight without a gradient. Internal dividers run
+          12 percent filled area under the line in the line own colour, just enough to give a 1.6 px stroke weight without a gradient. Internal dividers run
           at 50 percent border opacity so the outer card edge stays dominant.
         </p>
         <p className="text-[var(--text-secondary)] leading-7">

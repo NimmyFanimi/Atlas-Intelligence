@@ -49,7 +49,7 @@ export default function ArchitecturePage() {
           <span className="font-mono text-[13px] text-[var(--text-primary)]">calendar_events</span>, and{' '}
           <span className="font-mono text-[13px] text-[var(--text-primary)]">morning_briefs</span>. Composite index on{' '}
           <span className="font-mono text-[13px] text-[var(--text-primary)]">(asset_id, timestamp DESC)</span>, GIN on news&apos;s matched tickers,
-          partial indexes for &quot;unanalyzed&quot; and &quot;estimate missing&quot; hot paths, RLS public read only. The frontend&apos;s main join (latest snapshot per asset) is
+          partial indexes for &quot;unanalysed&quot; and &quot;estimate missing&quot; hot paths, RLS public read only. The frontend&apos;s main join (latest snapshot per asset) is
           done in TypeScript by grouping a bounded window rather than a Postgres RPC. At 16 assets the performance difference is unmeasurable and the logic
           stays readable on GitHub.
         </p>
