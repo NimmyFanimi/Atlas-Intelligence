@@ -55,7 +55,7 @@ flowchart TB
 
 The five boxes at the top are the external data sources (Finnhub, FRED, EIA, Metals.dev, Marketaux).
 
-A scheduled job writes snapshots into Supabase on a fixed cadence (5 minutes for prices, daily for calendar/FRED data, every 2 hours for news). The frontend never calls Finnhub, FRED, EIA, Metals.dev, or Marketaux directly, it only ever reads from Supabase. This keeps every free-tier rate limit comfortably safe regardless of visitor traffic, and gives historical price data as a side effect of snapshotting rather than a separate feature to build.
+A scheduled job writes snapshots into Supabase on a fixed cadence (5 minutes for prices, daily for calendar/FRED data, every 3 hours for news). The frontend never calls Finnhub, FRED, EIA, Metals.dev, or Marketaux directly, it only ever reads from Supabase. This keeps every free-tier rate limit comfortably safe regardless of visitor traffic, and gives historical price data as a side effect of snapshotting rather than a separate feature to build.
 
 ## How This Was Built
 
