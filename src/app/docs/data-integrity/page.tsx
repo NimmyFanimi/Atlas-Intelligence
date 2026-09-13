@@ -110,6 +110,32 @@ export default function DataIntegrityPage() {
             <span className="font-mono text-[13px] text-[var(--text-primary)]">market_snapshots</span>.
           </p>
         </section>
+
+        <section id="sec-news-reliability" className="chunk mb-14 scroll-mt-6">
+          <span className="meta-label inline-block font-mono text-[11px] text-[var(--teal-light)] bg-[var(--teal-dim)] px-2 py-[3px] rounded-[5px] mb-3">Case study</span>
+          <h2 className="text-[19px] font-semibold tracking-[-0.01em] mb-[14px]">The News Engine that kept almost working</h2>
+          <p className="font-mono text-[10.5px] text-[var(--text-muted)] max-w-[620px] mb-5 leading-5">
+            This one&apos;s longer and structured differently from the other case studies above. It wasn&apos;t one bug, it was five, each one only visible after fixing the last. Told here roughly as it actually happened, not tidied into a single Problem, Root cause, Fix.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            <strong className="text-[var(--text-primary)] font-medium">The starting constraint:</strong> {` `}News Engine&apos;s cron job ran on cron-job.org&apos;s free tier, which enforces a hard 30 second timeout on every request. Early fixes to Gemini call reliability kept running into the same wall, a retry attempt here, a longer timeout there, and the total worst case for one run would creep right up against that 30 second ceiling, sometimes just under it, sometimes just over. Every improvement was constrained by a limit that had nothing to do with the actual problem being solved.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            <strong className="text-[var(--text-primary)] font-medium">Removing the ceiling:</strong> {` `}The real fix wasn&apos;t another timeout tweak, it was migrating the cron trigger off cron-job.org entirely, onto a GitHub Actions scheduled workflow. Free, since Actions minutes are unlimited on a public repo, and with no meaningful timeout ceiling at all. This wasn&apos;t done to fix one specific failure, it was done because every fix up to that point kept being shaped by a constraint that no longer needed to exist.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            <strong className="text-[var(--text-primary)] font-medium">Two hangs, same shape:</strong> {` `}With the ceiling gone, two further bugs surfaced that had likely been there all along, just masked by everything else failing first. Concurrent calls to Gemini&apos;s fallback API key intermittently hung until timeout, proven by writing an isolated script that fired two calls at once and reproduced the hang on demand, not by guessing from production logs. Fixed with a serializing queue around the fallback call. Then the same hang turned up on the primary key too, proven the same way, and fixed with a second, separate queue, kept in a different file specifically because Morning Brief shares the underlying client code and doesn&apos;t have this concurrency problem, so it shouldn&apos;t be forced to serialize unnecessarily.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            <strong className="text-[var(--text-primary)] font-medium">The gap concurrency didn&apos;t fix:</strong> {` `}A third failure still got through. A primary key timeout has no code path to the fallback key at all, its fallback logic was gated entirely on a 429 quota response, a genuine network timeout was caught earlier and just failed outright. Found by rereading the actual current code rather than trusting a remembered version of it, then fixed by unifying both failure surfaces through one shared fallback helper. This one comes with an honest caveat, it&apos;s verified correct by code review and a clean production deploy, but the exact failure it targets hasn&apos;t yet been observed firing live and succeeding, since forcing a timeout on demand isn&apos;t something worth doing just to watch a fix work.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
+            <strong className="text-[var(--text-primary)] font-medium">Two staleness bugs, two different fixes:</strong> {` `}Separately, the News Engine page itself started showing stale data, first a single article&apos;s analysis stuck on pending after the cron had already filled it in, then entire new articles missing from the list until a manual refresh. Both looked like the same ISR caching bug already fixed once for Morning Brief. They weren&apos;t quite. Morning Brief&apos;s fix was safe because it&apos;s a single row fetched once a day, applying the same fix here would mean an unbounded table scan on every single page visit as the article list keeps growing. Fixed instead with two small, targeted client-side refetches, one for a single article&apos;s analysis on modal open, one for new rows on page load, neither touching the page&apos;s existing caching strategy.
+          </p>
+          <p className="text-[var(--text-secondary)] max-w-[620px] leading-7">
+            <strong className="text-[var(--text-primary)] font-medium">The quota problem underneath everything:</strong> {` `}Last, and arguably the real root cause tying it all together, News Engine and Morning Brief were sharing one Gemini API key&apos;s daily quota. As News Engine&apos;s own call volume grew, it alone came close to, then exceeded, that shared cap, putting Morning Brief&apos;s single daily call at risk too. Fixed two ways, Morning Brief moved to its own dedicated key on a separate account, and News Engine&apos;s cron cadence dropped from every 2 hours to every 3, bringing its own worst case comfortably back under the limit.
+          </p>
+        </section>
       </div>
       <Toc items={tocItems} containerId="scroll-content" />
     </>
