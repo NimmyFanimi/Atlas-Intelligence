@@ -55,7 +55,7 @@ export default function DataFlowDiagram() {
       <div className="mx-auto max-w-[420px] rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] px-5 py-4 text-center outline-none focus:outline-none focus-visible:outline-none shadow-none ring-0">
         <div className="font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--text-muted)]">CRON INGESTION</div>
         <div className="mt-1 text-[13px] font-medium text-[var(--text-primary)]">cron-job.org + Vercel Cron to API routes</div>
-        <div className="mt-1 font-mono text-[11px] text-[var(--text-secondary)]">5 min snapshots, daily FRED guard, 2 hr news poll</div>
+        <div className="mt-1 font-mono text-[11px] text-[var(--text-secondary)]">5 min snapshots, daily FRED guard, 3 hr news poll</div>
       </div>
 
       <div className="flex justify-center py-2">

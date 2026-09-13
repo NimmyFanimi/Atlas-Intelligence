@@ -54,7 +54,7 @@ export default function ModulesPage() {
             per entity sentiment scores. There is no single article level sentiment, so Atlas derives one by averaging the entity scores, nulls excluded. Asset
             tagging compares Marketaux entity symbol against each asset <span className="font-mono text-[13px] text-[var(--text-primary)]">finnhub_symbol</span>. A
             macro flag is a separate keyword match, so an article can be both macro and ticker tagged. Ingestion is capped at 2 articles per run with an 800 ms
-            delay between Gemini 2.0 Flash analyses to keep the whole job inside cron-job.org 30 second watchdog.
+            delay between Gemini 3.6 Flash analyses to keep the whole job inside cron-job.org 30 second watchdog.
           </p>
           <p className="text-[var(--text-secondary)] max-w-[620px] mb-3 leading-7">
             The &quot;Sentimeter&quot; gauge (needle plus arc plus numeric readout, teal only) appears only in the full screen modal. The card is too small to render the

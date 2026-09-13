@@ -34,7 +34,7 @@ export default function ArchitecturePage() {
           for the year this project needs to stay live. At 1 minute cadence the same math is 1.8 GB per year and the cap breaks in about three months.
         </p>
         <p className="text-[var(--text-secondary)] mb-3 leading-7">
-          News polling runs every 2 hours (news does not need price like freshness), and the EIA and FRED pulls are gated behind a &quot;did we already fetch today&quot;
+          News polling runs every 3 hours (news does not need price like freshness), and the EIA and FRED pulls are gated behind a &quot;did we already fetch today&quot;
           check so the same 5 minute tick does not hammer an end of day or weekly source. Morning Brief is the one job that lives on Vercel&apos;s own cron. Its
           Gemini generation grew past cron-job.org&apos;s 30 second watchdog, but fits comfortably in Vercel&apos;s 60 second window.
         </p>
