@@ -5,7 +5,7 @@ export default function DocsLandingPage() {
     { title: 'Overview', desc: 'Why I built this and what it actually is', icon: '◆', href: '/overview' },
     { title: 'Architecture', desc: 'How data moves through the system, end to end', icon: '▤', href: '/docs/architecture' },
     { title: 'Modules', desc: 'What each of the five parts does, and the real data behind it', icon: '▦', href: '/docs/modules' },
-    { title: 'Data Integrity', desc: 'Four real production bugs, root-caused and fixed', icon: '◈', href: '/docs/data-integrity' },
+    { title: 'Data Integrity', desc: 'Five real production bugs, root-caused and fixed', icon: '◈', href: '/docs/data-integrity' },
     { title: 'Design', desc: 'The visual choices behind the terminal, and why', icon: '◐', href: '/docs/design' },
   ];
 

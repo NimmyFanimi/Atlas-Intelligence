@@ -85,7 +85,7 @@ export default function OverviewPage() {
                   <Link href="/docs/data-integrity" className="text-[var(--teal-light)] hover:underline">
                     Data Integrity
                   </Link>{' '}
-                  details four production bugs that made it to prod, how they were found, and what actually fixed them.
+                  details five production bugs that made it to prod, how they were found, and what actually fixed them.
                 </li>
                 <li>
                   <Link href="/docs/design" className="text-[var(--teal-light)] hover:underline">
