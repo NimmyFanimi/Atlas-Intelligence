@@ -59,15 +59,9 @@ A scheduled job writes snapshots into Supabase on a fixed cadence (5 minutes for
 
 ## How This Was Built
 
-I'm not a software engineer by training, this project is a solo build by a student, not a professional dev. I directed the entire build using AI coding agents (Claude for architecture, planning, and debugging; OpenCode running Kimi K2.7 and DeepSeek V4 for implementation) rather than writing every line by hand.
+Atlas Intelligence was developed using AI coding agents alongside conventional development tools. I directed the architecture, product decisions and implementation, using agents to accelerate code generation and iteration while reviewing, testing and debugging the resulting system.
 
-What that split actually looked like in practice:
-
-- **I owned every architecture decision**: which five modules made V1 scope and which didn't, how ingestion should be structured to survive free-tier rate limits, when to abandon an approach (e.g. dropping ETF proxies for real commodity sourcing) and why.
-- **I found and diagnosed every real production bug**, then directed the fix: the FOMC phantom-event bug, the EIA key that looked saved but wasn't present at runtime, the Metals.dev quota burn, a PostgREST 1,000-row cap silently truncating sparse assets, and a multi-day News Engine reliability saga that turned up five distinct root causes in sequence (a missing shared retry path, a fix's own worst-case timing briefly exceeding a cron provider's timeout ceiling, a second cron phase with the same gap the first one had, two separate concurrency bugs where parallel Gemini calls intermittently hung on both the primary and fallback API keys, and a primary-key timeout that had no code path to the fallback key at all). None of these were caught by lint or a build log, they were caught by insisting on checking live, real data before calling anything done, including building isolated standalone test scripts to reproduce a hang deterministically rather than guessing from production symptoms, and confirming a fix against a direct database query rather than trusting a script's own self-reported success.
-- **AI agents handled implementation**: writing the code once a decision was made, translating a signed-off design mockup into components, mechanical refactors.
-
-I think this is worth being upfront about rather than glossing over. The judgment, debugging, and verification discipline are mine; the typing was largely delegated. If that's a dealbreaker for how you evaluate this project, that's a fair position to hold, but I'd rather you know the actual process than assume otherwise.
+This workflow allowed me to spend more time on system design, data architecture and diagnosing difficult production issues rather than manually writing every line of code.
 
 ## Overview
 Atlas Intelligence is a modern finance dashboard that answers four core questions:
