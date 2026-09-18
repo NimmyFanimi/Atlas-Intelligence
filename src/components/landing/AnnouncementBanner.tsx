@@ -39,7 +39,7 @@ export default function AnnouncementBanner() {
   };
 
   return (
-    <div className="mx-4 md:mx-auto mt-4 flex h-10 w-fit items-center rounded-full border border-[var(--teal)]/30 bg-[rgba(13,148,136,0.12)]">
+    <div className="mx-4 md:mx-auto mt-4 flex h-10 w-fit max-w-[calc(100vw-2rem)] items-center rounded-full border border-[var(--teal)]/30 bg-[rgba(13,148,136,0.12)]">
       <div className="flex items-center gap-2 px-4 py-1.5">
         <Link
           href={TARGET_HREF}
