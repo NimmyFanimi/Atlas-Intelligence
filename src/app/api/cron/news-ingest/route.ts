@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    let analysisResult: { found: number; analyzed: number; failed: number };
+    let analysisResult: { found: number; analyzed: number; failed: number; failedReasons: string[] };
     try {
       analysisResult = await analyzeUnprocessedArticles();
     } catch (err) {

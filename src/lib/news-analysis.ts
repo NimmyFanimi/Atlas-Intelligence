@@ -91,6 +91,17 @@ function logPossibleRateLimit(runId: string, articleId: string, err: unknown): v
   }
 }
 
+// Diagnostic-only helper: formats one failed article's reason for the
+// cron JSON response so it persists in GitHub Actions run logs. Keeps
+// only the article id plus the error message truncated to 200 chars.
+// Strips any "key=..." query value so a URL containing an API key can
+// never leak into logs via an error message.
+function formatFailureReason(articleId: string, err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const sanitized = raw.replace(/key=[^&\s"']*/gi, 'key=[REDACTED]');
+  return `id ${articleId}: ${sanitized.slice(0, 200)}`;
+}
+
 // Same analyst-persona prompt verified in the Gemini vs Groq comparison
 // test. Kept in sync manually with that test's prompt.js, if the prompt
 // is revised here, consider updating the sandbox copy too so future
@@ -228,6 +239,7 @@ export async function analyzeUnprocessedArticles(): Promise<{
   found: number;
   analyzed: number;
   failed: number;
+  failedReasons: string[];
 }> {
   const { data, error } = await supabaseAdmin
     .from('news_articles')
@@ -243,6 +255,7 @@ export async function analyzeUnprocessedArticles(): Promise<{
   const articles = (data || []) as UnanalyzedArticle[];
   let analyzed = 0;
   let failed = 0;
+  const failedReasons: string[] = [];
 
   const runId = new Date().toISOString();
   const runStartMs = Date.now();
@@ -274,6 +287,7 @@ export async function analyzeUnprocessedArticles(): Promise<{
         // Log and continue, this article stays null and gets retried next run.
         console.error(`Analysis failed for article ${article.id}:`, err);
         failed += 1;
+        failedReasons.push(formatFailureReason(article.id, err));
         console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=failed`);
         logPossibleRateLimit(runId, article.id, err);
       }
@@ -284,7 +298,7 @@ export async function analyzeUnprocessedArticles(): Promise<{
 
     console.log(`[news-analysis] run=${runId} mode=sequential totalDuration=${Date.now() - runStartMs}ms found=${articles.length} analyzed=${analyzed} failed=${failed} done`);
 
-    return { found: articles.length, analyzed, failed };
+    return { found: articles.length, analyzed, failed, failedReasons };
   }
 
   console.log(`[news-analysis] run=${runId} mode=parallel articles=${articles.length} starting`);
@@ -319,15 +333,17 @@ export async function analyzeUnprocessedArticles(): Promise<{
     })
   );
 
-  for (const result of settled) {
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
     if (result.status === 'fulfilled') {
       analyzed += 1;
     } else {
       failed += 1;
+      failedReasons.push(formatFailureReason(articles[i].id, result.reason));
     }
   }
 
   console.log(`[news-analysis] run=${runId} mode=parallel totalDuration=${Date.now() - runStartMs}ms found=${articles.length} analyzed=${analyzed} failed=${failed} done`);
 
-  return { found: articles.length, analyzed, failed };
+  return { found: articles.length, analyzed, failed, failedReasons };
 }
