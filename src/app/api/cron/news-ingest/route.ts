@@ -33,7 +33,7 @@ import { analyzeUnprocessedArticles } from '@/lib/news-analysis';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // seconds; generous headroom for a handful
-  // of sequential Gemini calls plus their 2s inter-call delays
+  // of sequential Gemini calls plus their inter-call delays (see DELAY_BETWEEN_CALLS_MS in news-analysis.ts)
 
 function isAuthorized(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization');
