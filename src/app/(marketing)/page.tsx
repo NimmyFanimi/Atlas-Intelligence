@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import AnnouncementBanner from '@/components/landing/AnnouncementBanner';
 import { getLandingPreviewAssets } from '@/lib/data/markets';
 
 export const revalidate = 60;
@@ -54,8 +55,10 @@ export default async function LandingPage() {
         </div>
       </header>
 
+      <AnnouncementBanner />
+
       {/* 2. HERO */}
-      <section className="px-6 sm:px-10 pt-[84px] pb-[60px] text-center max-w-[720px] mx-auto">
+      <section className="px-6 sm:px-10 pt-[28px] pb-[60px] text-center max-w-[720px] mx-auto">
         <div className="font-sans text-[13.5px] font-medium tracking-[0.02em] text-[var(--color-accent)] mb-[22px] flex items-center justify-center gap-2">
           <span className="w-[5px] h-[5px] rounded-full bg-[var(--color-market-up)] animate-pulse-dot" />
           Live market data, built for sales and trading
