@@ -26,7 +26,7 @@ export default function AnnouncementBanner() {
   }, []);
 
   if (!mounted || dismissed) {
-    return null;
+    return <div className="h-14" aria-hidden="true" />;
   }
 
   const dismiss = () => {
