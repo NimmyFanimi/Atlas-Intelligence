@@ -71,7 +71,7 @@ export default async function LandingPage() {
           <span className="text-[var(--color-secondary)]">before 9am.</span>
         </h1>
         <p className="font-sans text-[16.5px] text-[var(--color-secondary)] leading-[1.65] max-w-[520px] mx-auto mb-[36px] font-normal">
-          A real time research terminal covering markets, news, macro, and commodities. It's the same numbers a trading floor watches, just without the Bloomberg subscription.
+          A real time research terminal covering markets, news, macro, and commodities. It&apos;s the same numbers a trading floor watches, just without the Bloomberg subscription.
         </p>
         <div className="flex items-center justify-center gap-3">
           <Link
@@ -203,7 +203,7 @@ export default async function LandingPage() {
             Honest, not fabricated
           </div>
           <div className="font-sans text-[13px] text-[var(--color-secondary)] leading-[1.6]">
-            Where real data isn't available, Atlas shows a caveat, not a guess. Sourcing is disclosed directly in the UI.
+            Where real data isn&apos;t available, Atlas shows a caveat, not a guess. Sourcing is disclosed directly in the UI.
           </div>
         </div>
       </section>
