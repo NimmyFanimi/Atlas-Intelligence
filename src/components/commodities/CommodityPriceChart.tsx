@@ -36,7 +36,7 @@ export default function CommodityPriceChart({ data }: { data: ChartPoint[] }) {
     const d = parseTimestamp(label);
     const day = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(d);
     const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d);
-    const time = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit' }).format(d);
+    const time = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
     return `${day} ${month}, ${time}`;
   };
 

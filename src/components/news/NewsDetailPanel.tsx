@@ -41,7 +41,7 @@ function absoluteTimestamp(iso: string): string {
   const day = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(date);
   const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(date);
   const year = new Intl.DateTimeFormat('en-US', { year: 'numeric' }).format(date);
-  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date);
+  const time = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
   return `${day} ${month} ${year}, ${time}`;
 }
 
