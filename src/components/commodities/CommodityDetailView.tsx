@@ -26,11 +26,10 @@ function formatDollarChange(value: number | null | undefined): string {
 function formatShortDate(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '--';
-  return d.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const day = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(d);
+  const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d);
+  const year = new Intl.DateTimeFormat('en-US', { year: 'numeric' }).format(d);
+  return `${day} ${month} ${year}`;
 }
 
 function formatLastUpdated(iso: string | null): string {

@@ -26,19 +26,18 @@ export default function CommodityPriceChart({ data }: { data: ChartPoint[] }) {
   }
 
   const formatDate = (tick: string) => {
-    return parseTimestamp(tick).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    });
+    const d = parseTimestamp(tick);
+    const day = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(d);
+    const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d);
+    return `${day} ${month}`;
   };
 
   const formatTooltipLabel = (label: string) => {
-    return parseTimestamp(label).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const d = parseTimestamp(label);
+    const day = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(d);
+    const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d);
+    const time = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit' }).format(d);
+    return `${day} ${month}, ${time}`;
   };
 
   const formatPriceTick = (value: number) => {
