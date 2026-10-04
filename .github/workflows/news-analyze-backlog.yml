@@ -1,0 +1,33 @@
+name: News Engine Backlog Analysis Cron
+
+on:
+  schedule:
+    # Hourly backlog drain, offset to minute 37 to avoid colliding with
+    # the main news-ingest cron (minute 7, every 3 hours) and the top of
+    # the hour. Cron times are UTC; GitHub's scheduler can jitter by a
+    # few minutes under load.
+    - cron: '37 * * * *'
+  workflow_dispatch: {}
+    # Allows manually triggering a run from the GitHub Actions tab,
+    # useful for testing without waiting for the schedule.
+
+jobs:
+  trigger-news-analyze-backlog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call news-analyze-backlog route
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://atlas-intelligence-six.vercel.app/api/cron/news-analyze-backlog)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP status: $http_code"
+          echo "Response body: $body"
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "Backlog analysis failed with status $http_code"
+            exit 1
+          fi

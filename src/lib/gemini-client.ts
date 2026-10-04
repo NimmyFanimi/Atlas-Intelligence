@@ -59,9 +59,11 @@ async function attemptFallback(
   fallbackUrl: string,
   requestBody: string,
   fallbackTimeoutMs: number,
-  primaryFailureDescription: string
+  primaryFailureDescription: string,
+  onRequestAttempt?: (key: 'primary' | 'fallback') => void | Promise<void>
 ): Promise<string> {
   return await queueFallbackCall(async () => {
+    await onRequestAttempt?.('fallback');
     let fallbackRes: Response;
     try {
       fallbackRes = await fetch(fallbackUrl, {
@@ -101,7 +103,17 @@ async function attemptFallback(
 
 export async function callGeminiWithRetry(
   prompt: string,
-  options?: { timeoutMs?: number; fallbackTimeoutMs?: number; maxAttempts?: number; retryDelaysMs?: number[]; apiKey?: string; fallbackApiKey?: string }
+  options?: {
+    timeoutMs?: number;
+    fallbackTimeoutMs?: number;
+    maxAttempts?: number;
+    retryDelaysMs?: number[];
+    apiKey?: string;
+    fallbackApiKey?: string;
+    // Called before every HTTP attempt with which key the attempt uses.
+    // News Engine passes a budget-logging callback; Morning Brief omits it.
+    onRequestAttempt?: (key: 'primary' | 'fallback') => void | Promise<void>;
+  }
 ): Promise<string> {
   const apiKey = options?.apiKey ?? process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -124,6 +136,7 @@ export async function callGeminiWithRetry(
 
     let res: Response;
     try {
+      await options?.onRequestAttempt?.('primary');
       res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,7 +157,8 @@ export async function callGeminiWithRetry(
           fallbackUrl,
           requestBody,
           fallbackTimeoutMs,
-          primaryFailureDescription
+          primaryFailureDescription,
+          options?.onRequestAttempt
         );
       }
       if (!isLastAttempt && isRetryableGeminiError(null)) {
@@ -174,7 +188,8 @@ export async function callGeminiWithRetry(
           fallbackUrl,
           requestBody,
           fallbackTimeoutMs,
-          primaryFailureDescription
+          primaryFailureDescription,
+          options?.onRequestAttempt
         );
       }
       const error = new Error(`Gemini call failed: ${res.status} ${body}`);

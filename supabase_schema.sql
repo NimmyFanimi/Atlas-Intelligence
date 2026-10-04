@@ -149,6 +149,27 @@ ALTER TABLE morning_briefs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read access on morning_briefs" ON morning_briefs
   FOR SELECT USING (true);
 
+-- 5.7 Create gemini_usage_log table (News Engine Gemini budget tracking)
+-- One row per UTC day per News Engine key ('primary' or 'fallback').
+-- Incremented on every Gemini HTTP attempt (success or failure, including
+-- 503s, since failed attempts still consume requests against the
+-- Google-side free-tier cap). Read by both the main news-ingest cron and
+-- the hourly backlog cron through the shared helpers in lib/gemini-usage.ts
+-- so both callers draw from the same daily budget. Morning Brief uses its
+-- own separate key and never reads or writes this table.
+-- No public RLS policy on purpose: only the service-role client (which
+-- bypasses RLS) touches this table, it must never be readable from the
+-- browser.
+CREATE TABLE IF NOT EXISTS gemini_usage_log (
+  usage_date date NOT NULL,
+  key_identifier text NOT NULL CHECK (key_identifier IN ('primary', 'fallback')),
+  request_count integer NOT NULL DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (usage_date, key_identifier)
+);
+
+ALTER TABLE gemini_usage_log ENABLE ROW LEVEL SECURITY;
+
 -- 6. Pre-Seed Data for the 16-Asset Watchlist
 INSERT INTO assets (symbol, name, asset_class, finnhub_symbol, fred_series_id, eia_series_id) VALUES
 -- Indices (Using liquid US ETF Proxies for live quotes)
