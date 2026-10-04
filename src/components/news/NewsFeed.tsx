@@ -54,6 +54,7 @@ function AiAnalysedToggle({ active, onChange }: {
       <button
         type="button"
         aria-pressed={active}
+        title="Some recent articles may not be analysed yet."
         onClick={() => onChange(!active)}
         className={`${base} ${active ? activeCls : idle}`}
       >
