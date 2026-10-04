@@ -7,7 +7,9 @@
 // free-tier keys (GEMINI_API_KEY primary, GEMINI_API_KEY_FALLBACK), each
 // capped at 20 requests/day by Google. This module keeps a per-day,
 // per-key counter in the gemini_usage_log table so either caller can check
-// remaining budget before starting a new article analysis.
+// remaining budget before starting a new article analysis. Days follow
+// the America/Los_Angeles date, matching Google's daily quota reset
+// (midnight Pacific), not UTC.
 //
 // Counting rule: increment on every HTTP attempt (success or failure,
 // including 503s), because failed attempts still consume requests against
@@ -41,9 +43,18 @@ export class QuotaExhaustedError extends Error {
   }
 }
 
-// UTC day in YYYY-MM-DD form, the grain of one budget row.
-export function utcDay(nowMs = Date.now()): string {
-  return new Date(nowMs).toISOString().slice(0, 10);
+// Pacific day in YYYY-MM-DD form, the grain of one budget row. Google
+// resets the free-tier daily quota at midnight Pacific, so the counter
+// must follow America/Los_Angeles, not UTC (the two disagree for about
+// 7 hours a day). en-CA formatting yields YYYY-MM-DD and the timeZone
+// option handles DST.
+export function pacificDay(nowMs = Date.now()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(nowMs));
 }
 
 interface UsageRow {
@@ -68,7 +79,7 @@ async function getUsageForDay(day: string, key: GeminiKeyId): Promise<number> {
 // Today's counts for both News Engine keys. Throws on DB error so the
 // caller can decide fail-open vs fail-closed.
 export async function getTodayGeminiUsage(): Promise<Record<GeminiKeyId, number>> {
-  const day = utcDay();
+  const day = pacificDay();
   const [primary, fallback] = await Promise.all([
     getUsageForDay(day, 'primary'),
     getUsageForDay(day, 'fallback'),
@@ -81,7 +92,7 @@ export async function getTodayGeminiUsage(): Promise<Record<GeminiKeyId, number>
 // successful write.
 export async function incrementGeminiUsage(key: GeminiKeyId, count = 1): Promise<void> {
   try {
-    const day = utcDay();
+    const day = pacificDay();
     const current = await getUsageForDay(day, key);
     const { error } = await supabaseAdmin.from('gemini_usage_log').upsert(
       {
@@ -97,6 +108,43 @@ export async function incrementGeminiUsage(key: GeminiKeyId, count = 1): Promise
     }
   } catch (err) {
     console.warn(`[gemini-usage] increment failed for ${key}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// Marks a key as exhausted for today after a real per-day 429: upserts
+// today's row to max(existing, GEMINI_DAILY_CAP), never lowering an
+// existing count. Best-effort, never throws, same style as
+// incrementGeminiUsage. Logs identifier and date only, no key material,
+// no response body.
+//
+// Race note: this uses the same read-modify-write pattern as
+// incrementGeminiUsage (read, then upsert), so it is not atomic. An
+// increment that reads just before this write lands just after can
+// write back a lower value (existing + 1 below the cap). The next
+// resolveGeminiKey check or the next per-day 429 re-marks the key, so
+// the window self-heals within one article, but a single extra attempt
+// on a dead key is possible in that window.
+export async function markGeminiKeyExhausted(key: GeminiKeyId): Promise<void> {
+  try {
+    const day = pacificDay();
+    const current = await getUsageForDay(day, key);
+    if (current >= GEMINI_DAILY_CAP) return;
+    const { error } = await supabaseAdmin.from('gemini_usage_log').upsert(
+      {
+        usage_date: day,
+        key_identifier: key,
+        request_count: GEMINI_DAILY_CAP,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'usage_date,key_identifier' }
+    );
+    if (error) {
+      console.warn(`[gemini-usage] mark exhausted failed for ${key}: ${error.message}`);
+      return;
+    }
+    console.warn(`[gemini-usage] marked ${key} exhausted for ${day} (was ${current})`);
+  } catch (err) {
+    console.warn(`[gemini-usage] mark exhausted failed for ${key}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

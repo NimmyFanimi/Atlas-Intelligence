@@ -29,6 +29,7 @@ import {
   GEMINI_SAFE_THRESHOLD,
   QuotaExhaustedError,
   incrementGeminiUsage,
+  markGeminiKeyExhausted,
   resolveGeminiKey,
 } from './gemini-usage';
 
@@ -201,6 +202,7 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
           timeoutMs: 15000,
           fallbackTimeoutMs: 6000,
           onRequestAttempt: (key: 'primary' | 'fallback') => incrementGeminiUsage(key),
+          onQuotaExhausted: (key: 'primary' | 'fallback') => markGeminiKeyExhausted(key),
           generationConfig: { responseMimeType: 'application/json' },
           onFinishReason: (reason: string) => {
             finishReason = reason;
@@ -216,6 +218,7 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
             apiKey: fallbackKey,
             fallbackApiKey: undefined as unknown as string | undefined,
             onRequestAttempt: () => incrementGeminiUsage('fallback'),
+            onQuotaExhausted: () => markGeminiKeyExhausted('fallback'),
             generationConfig: { responseMimeType: 'application/json' },
             onFinishReason: (reason: string) => {
               finishReason = reason;

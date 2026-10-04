@@ -150,7 +150,9 @@ CREATE POLICY "Allow public read access on morning_briefs" ON morning_briefs
   FOR SELECT USING (true);
 
 -- 5.7 Create gemini_usage_log table (News Engine Gemini budget tracking)
--- One row per UTC day per News Engine key ('primary' or 'fallback').
+-- One row per Pacific day (America/Los_Angeles, matching Google's daily
+-- quota reset at midnight Pacific) per News Engine key ('primary' or
+-- 'fallback').
 -- Incremented on every Gemini HTTP attempt (success or failure, including
 -- 503s, since failed attempts still consume requests against the
 -- Google-side free-tier cap). Read by both the main news-ingest cron and

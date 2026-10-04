@@ -30,6 +30,18 @@ function isDailyQuotaExhausted(status: number | null, bodyText: string): boolean
   return lowered.includes('resource_exhausted') || lowered.includes('perday');
 }
 
+// Strict per-day quota check for the exhaustion hook below. A bare
+// RESOURCE_EXHAUSTED on a 429 can also mean the per-minute limit, which
+// clears on its own and must never mark a key dead for the whole day.
+// Only a per-day signal (for example quotaId GenerateRequestsPerDay)
+// qualifies.
+function isPerDayQuotaExhausted(status: number | null, bodyText: string): boolean {
+  if (status !== 429) {
+    return false;
+  }
+  return bodyText.toLowerCase().includes('perday');
+}
+
 export function isRetryableGeminiError(status: number | null): boolean {
   if (status === null) {
     return true;
@@ -61,7 +73,8 @@ async function attemptFallback(
   fallbackTimeoutMs: number,
   primaryFailureDescription: string,
   onRequestAttempt?: (key: 'primary' | 'fallback') => void | Promise<void>,
-  onFinishReason?: (finishReason: string) => void | Promise<void>
+  onFinishReason?: (finishReason: string) => void | Promise<void>,
+  onQuotaExhausted?: (key: 'primary' | 'fallback') => void | Promise<void>
 ): Promise<string> {
   return await queueFallbackCall(async () => {
     await onRequestAttempt?.('fallback');
@@ -84,6 +97,11 @@ async function attemptFallback(
     }
     if (!fallbackRes.ok) {
       const fallbackBody = await fallbackRes.text();
+      // Strict per-day classification only, purely to notify the hook.
+      // What is thrown below is unchanged.
+      if (isPerDayQuotaExhausted(fallbackRes.status, fallbackBody)) {
+        await onQuotaExhausted?.('fallback');
+      }
       const bothFailed = new Error(
         `Gemini call failed on both primary and fallback keys: ${primaryFailureDescription}; fallback ${fallbackRes.status} ${fallbackBody}`
       );
@@ -129,6 +147,12 @@ export async function callGeminiWithRetry(
     // Receives candidates[0].finishReason when the response includes one.
     // Same optional-hook pattern as onRequestAttempt.
     onFinishReason?: (finishReason: string) => void | Promise<void>;
+    // Fired only when a 429 body specifically indicates the per-day quota
+    // (case-insensitive "perday"), never on bare RESOURCE_EXHAUSTED or
+    // per-minute 429s. News Engine persists this to the daily budget;
+    // Morning Brief omits it. When omitted, behaviour is identical to
+    // before this hook existed.
+    onQuotaExhausted?: (key: 'primary' | 'fallback') => void | Promise<void>;
   }
 ): Promise<string> {
   const apiKey = options?.apiKey ?? process.env.GEMINI_API_KEY;
@@ -182,7 +206,8 @@ export async function callGeminiWithRetry(
           fallbackTimeoutMs,
           primaryFailureDescription,
           options?.onRequestAttempt,
-          options?.onFinishReason
+          options?.onFinishReason,
+          options?.onQuotaExhausted
         );
       }
       if (!isLastAttempt && isRetryableGeminiError(null)) {
@@ -202,6 +227,12 @@ export async function callGeminiWithRetry(
 
     if (!res.ok) {
       const body = await res.text();
+      // Persist real per-day exhaustion even when there is no fallback
+      // key to switch to. Existing fallback and retry behaviour below is
+      // unchanged; this hook only records the event.
+      if (isPerDayQuotaExhausted(res.status, body)) {
+        await options?.onQuotaExhausted?.('primary');
+      }
       if (isDailyQuotaExhausted(res.status, body) && fallbackUrl) {
         console.warn(
           '[gemini-client] primary key quota exhausted, falling back to secondary key'
@@ -214,7 +245,8 @@ export async function callGeminiWithRetry(
           fallbackTimeoutMs,
           primaryFailureDescription,
           options?.onRequestAttempt,
-          options?.onFinishReason
+          options?.onFinishReason,
+          options?.onQuotaExhausted
         );
       }
       const error = new Error(`Gemini call failed: ${res.status} ${body}`);
