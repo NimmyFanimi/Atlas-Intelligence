@@ -114,6 +114,19 @@ function formatFailureReason(articleId: string, err: unknown): string {
   return `id ${articleId}: ${sanitized.slice(0, 200)}`;
 }
 
+// Builds a public-log-safe payload summary for parse failures: finish
+// reason, payload length, and short head/tail slices only. The repo and
+// Actions logs are public, so the full model response must never appear
+// in these messages; head and tail are enough to tell preamble junk
+// apart from a cut-off tail. Applies the same key redaction as
+// formatFailureReason.
+function describeParsePayload(cleaned: string, finishReason: string | undefined): string {
+  const redact = (s: string): string => s.replace(/key=[^&\s"']*/gi, 'key=[REDACTED]');
+  const head = redact(cleaned.slice(0, 80));
+  const tail = cleaned.length > 80 ? ` ... ${redact(cleaned.slice(-80))}` : '';
+  return `(finishReason=${finishReason ?? 'unknown'}, chars=${cleaned.length}): ${head}${tail}`;
+}
+
 // Same analyst-persona prompt verified in the Gemini vs Groq comparison
 // test. Kept in sync manually with that test's prompt.js, if the prompt
 // is revised here, consider updating the sandbox copy too so future
@@ -173,6 +186,13 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
     );
   }
 
+  // JSON mode is enforced via generationConfig (no maxOutputTokens: on a
+  // thinking model, thinking tokens count toward it and a low value would
+  // cut the response off; temperature is left at the default). The finish
+  // reason is captured for parse-failure diagnosis, it is the only signal
+  // that distinguishes a MAX_TOKENS cutoff from malformed output.
+  let finishReason: string | undefined;
+
   // Forced-fallback mode: drive the fallback key as the primary URL with
   // no further fallback behind it, and count all attempts to fallback.
   const callOptions =
@@ -181,6 +201,10 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
           timeoutMs: 15000,
           fallbackTimeoutMs: 6000,
           onRequestAttempt: (key: 'primary' | 'fallback') => incrementGeminiUsage(key),
+          generationConfig: { responseMimeType: 'application/json' },
+          onFinishReason: (reason: string) => {
+            finishReason = reason;
+          },
         }
       : (() => {
           const fallbackKey = process.env.GEMINI_API_KEY_FALLBACK;
@@ -192,6 +216,10 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
             apiKey: fallbackKey,
             fallbackApiKey: undefined as unknown as string | undefined,
             onRequestAttempt: () => incrementGeminiUsage('fallback'),
+            generationConfig: { responseMimeType: 'application/json' },
+            onFinishReason: (reason: string) => {
+              finishReason = reason;
+            },
           };
         })();
 
@@ -216,14 +244,22 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
   try {
     parsed = JSON.parse(cleaned);
   } catch {
+    // No retry here on purpose: every request counts against the daily
+    // budget, and a malformed response will not fix itself on resend.
+    // A MAX_TOKENS finish means the response was cut off at the token
+    // limit rather than malformed by the model.
+    const cutoff =
+      finishReason === 'MAX_TOKENS'
+        ? ' Response was cut off at the token limit (MAX_TOKENS).'
+        : '';
     throw new Error(
-      `Failed to parse Gemini JSON response for article ${article.id}: ${cleaned}`
+      `parse failure for article ${article.id} ${describeParsePayload(cleaned, finishReason)}.${cutoff}`
     );
   }
 
   if (!parsed.what_happened || !parsed.why_it_matters || !parsed.trade_read) {
     throw new Error(
-      `Gemini response for article ${article.id} missing required fields: ${cleaned}`
+      `missing required fields for article ${article.id} ${describeParsePayload(cleaned, finishReason)}`
     );
   }
 

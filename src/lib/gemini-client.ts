@@ -60,7 +60,8 @@ async function attemptFallback(
   requestBody: string,
   fallbackTimeoutMs: number,
   primaryFailureDescription: string,
-  onRequestAttempt?: (key: 'primary' | 'fallback') => void | Promise<void>
+  onRequestAttempt?: (key: 'primary' | 'fallback') => void | Promise<void>,
+  onFinishReason?: (finishReason: string) => void | Promise<void>
 ): Promise<string> {
   return await queueFallbackCall(async () => {
     await onRequestAttempt?.('fallback');
@@ -90,6 +91,10 @@ async function attemptFallback(
       throw bothFailed;
     }
     const fallbackData = await fallbackRes.json();
+    const fallbackFinishReason: unknown = fallbackData?.candidates?.[0]?.finishReason;
+    if (typeof fallbackFinishReason === 'string') {
+      await onFinishReason?.(fallbackFinishReason);
+    }
     const fallbackText =
       fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof fallbackText !== 'string') {
@@ -113,6 +118,17 @@ export async function callGeminiWithRetry(
     // Called before every HTTP attempt with which key the attempt uses.
     // News Engine passes a budget-logging callback; Morning Brief omits it.
     onRequestAttempt?: (key: 'primary' | 'fallback') => void | Promise<void>;
+    // Optional generation config for the request. Included in the request
+    // body only when provided; when omitted the body is byte-identical to
+    // a plain { contents } request (Morning Brief omits it).
+    generationConfig?: {
+      responseMimeType?: string;
+      maxOutputTokens?: number;
+      temperature?: number;
+    };
+    // Receives candidates[0].finishReason when the response includes one.
+    // Same optional-hook pattern as onRequestAttempt.
+    onFinishReason?: (finishReason: string) => void | Promise<void>;
   }
 ): Promise<string> {
   const apiKey = options?.apiKey ?? process.env.GEMINI_API_KEY;
@@ -127,9 +143,16 @@ export async function callGeminiWithRetry(
   const maxAttempts = options?.maxAttempts ?? MAX_ATTEMPTS;
   const retryDelaysMs = options?.retryDelaysMs ?? RETRY_DELAYS_MS;
 
-  const requestBody = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
-  });
+  const requestBody = JSON.stringify(
+    options?.generationConfig !== undefined
+      ? {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: options.generationConfig,
+        }
+      : {
+          contents: [{ parts: [{ text: prompt }] }],
+        }
+  );
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const isLastAttempt = attempt === maxAttempts;
@@ -158,7 +181,8 @@ export async function callGeminiWithRetry(
           requestBody,
           fallbackTimeoutMs,
           primaryFailureDescription,
-          options?.onRequestAttempt
+          options?.onRequestAttempt,
+          options?.onFinishReason
         );
       }
       if (!isLastAttempt && isRetryableGeminiError(null)) {
@@ -189,7 +213,8 @@ export async function callGeminiWithRetry(
           requestBody,
           fallbackTimeoutMs,
           primaryFailureDescription,
-          options?.onRequestAttempt
+          options?.onRequestAttempt,
+          options?.onFinishReason
         );
       }
       const error = new Error(`Gemini call failed: ${res.status} ${body}`);
@@ -208,6 +233,10 @@ export async function callGeminiWithRetry(
     }
 
     const data = await res.json();
+    const finishReason: unknown = data?.candidates?.[0]?.finishReason;
+    if (typeof finishReason === 'string') {
+      await options?.onFinishReason?.(finishReason);
+    }
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (typeof rawText !== 'string') {
