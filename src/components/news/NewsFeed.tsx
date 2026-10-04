@@ -9,7 +9,7 @@
 //
 // Detail interaction: News Engine uses a centered MODAL OVERLAY (720px), with
 // the grid behind it blurred and dimmed. This is intentionally different from
-// Markets Dashboard's right-column side panel — a deliberate per-module
+// Markets Dashboard's right-column side panel, a deliberate per-module
 // interaction pattern. Closing happens via the panel's close button, a
 // backdrop click, or the Escape key.
 
@@ -21,7 +21,7 @@ import { fetchArticleAnalysis, fetchRecentArticles } from '@/lib/data/newsAnalys
 
 type ViewMode = 'unified' | 'split';
 
-// ── local view toggle (mirrors MarketsDashboard.ViewToggle look, separate region) ──
+// Local view toggle (mirrors MarketsDashboard.ViewToggle look, separate region)
 function FeedViewToggle({ viewMode, onViewChange }: {
   viewMode: ViewMode;
   onViewChange: (mode: ViewMode) => void;
@@ -36,6 +36,28 @@ function FeedViewToggle({ viewMode, onViewChange }: {
       </button>
       <button type="button" onClick={() => onViewChange('split')} className={`${base} ${viewMode === 'split' ? active : idle}`}>
         Split
+      </button>
+    </div>
+  );
+}
+
+// AI analysed toggle (same markup and styling pattern as FeedViewToggle)
+function AiAnalysedToggle({ active, onChange }: {
+  active: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const base = 'px-4 py-1 transition-colors duration-150';
+  const activeCls = 'bg-[var(--color-accent)] text-[var(--color-background)]';
+  const idle = 'text-[var(--color-secondary)] hover:text-[var(--color-primary)]';
+  return (
+    <div className="inline-flex items-center gap-1 p-1 bg-[var(--color-surface)] border border-[var(--color-border)] font-mono text-xs">
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={() => onChange(!active)}
+        className={`${base} ${active ? activeCls : idle}`}
+      >
+        AI analysed
       </button>
     </div>
   );
@@ -121,6 +143,7 @@ interface NewsFeedProps {
 
 export default function NewsFeed({ data }: NewsFeedProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('unified');
+  const [aiAnalysedOnly, setAiAnalysedOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Records which visible list the currently-open article was clicked from so
   // prev/next navigate within that same ordered list: '__all' for the unified
@@ -131,37 +154,67 @@ export default function NewsFeed({ data }: NewsFeedProps) {
   // on mount by the effect below. They become normal members of articles,
   // so modal, split view, nav, and fallbacks need no special casing.
   const [addedArticles, setAddedArticles] = useState<NewsArticle[]>([]);
+  // Refreshed analysis for base rows that were pending at ISR time but have
+  // since gained ai_analysis in the recent batch, keyed by article id.
+  const [analysisUpdates, setAnalysisUpdates] = useState<
+    Record<string, { ai_analysis: NewsAiAnalysis; ai_model_used: string | null }>
+  >({});
   // Mount guard so the recent fetch runs at most once per page load, and
   // only after server data is available (data can be null while loading).
   const fetchedRecentRef = useRef(false);
 
   const articles = useMemo(() => {
     const base = data?.articles ?? [];
-    if (addedArticles.length === 0) return base;
-    const seen = new Set(base.map((a) => a.id));
+    const withUpdates =
+      Object.keys(analysisUpdates).length === 0
+        ? base
+        : base.map((a) => {
+            const update = analysisUpdates[a.id];
+            if (update && !a.ai_analysis && update.ai_analysis) {
+              return { ...a, ...update };
+            }
+            return a;
+          });
+    if (addedArticles.length === 0) return withUpdates;
+    const seen = new Set(withUpdates.map((a) => a.id));
     const fresh = addedArticles.filter((a) => !seen.has(a.id));
-    if (fresh.length === 0) return base;
-    return [...fresh, ...base].sort(
+    if (fresh.length === 0) return withUpdates;
+    return [...fresh, ...withUpdates].sort(
       (a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
     );
-  }, [data?.articles, addedArticles]);
+  }, [data?.articles, addedArticles, analysisUpdates]);
   const assetsById = useMemo(() => data?.assetsById ?? {}, [data?.assetsById]);
   const assetClassById = useMemo(() => data?.assetClassById ?? {}, [data?.assetClassById]);
 
-  // One-shot list refresh on mount: fetch a small recent batch and prepend
-  // any ids not already in the cached list, sorted by published_at desc.
-  // Additive rows only, never updates existing rows. No interval, no polling,
+  // One-shot list refresh on mount: fetch a small recent batch, prepend ids
+  // not already in the cached list, and refresh ai_analysis on cached rows
+  // that were pending but have since been analysed. No interval, no polling,
   // no refetch on focus, no subscription. A later refresh or remount picks
   // up ISR state normally.
   useEffect(() => {
     if (!data || fetchedRecentRef.current) return;
     fetchedRecentRef.current = true;
     let cancelled = false;
-    const knownIds = new Set((data.articles ?? []).map((a) => a.id));
+    const baseById = new Map((data.articles ?? []).map((a) => [a.id, a]));
+    const knownIds = new Set(baseById.keys());
     fetchRecentArticles(10)
       .then((recent) => {
         if (cancelled || !recent) return;
         const genuinelyNew = recent.filter((a) => !knownIds.has(a.id));
+        const gainedAnalysis: Record<string, { ai_analysis: NewsAiAnalysis; ai_model_used: string | null }> = {};
+        for (const row of recent) {
+          if (!knownIds.has(row.id) || !row.ai_analysis) continue;
+          const cached = baseById.get(row.id);
+          if (cached && !cached.ai_analysis) {
+            gainedAnalysis[row.id] = {
+              ai_analysis: row.ai_analysis,
+              ai_model_used: row.ai_model_used,
+            };
+          }
+        }
+        if (Object.keys(gainedAnalysis).length > 0) {
+          setAnalysisUpdates((prev) => ({ ...prev, ...gainedAnalysis }));
+        }
         if (genuinelyNew.length === 0) return;
         setAddedArticles((prev) => {
           const seen = new Set([...knownIds, ...prev.map((a) => a.id)]);
@@ -242,19 +295,27 @@ export default function NewsFeed({ data }: NewsFeedProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedArticle, closeModal]);
 
-  // Split view grouping: market-wide (is_macro) + a section per matched asset.
+  // Client-side content filter: when aiAnalysedOnly is on, keep only rows
+  // with ai_analysis present. Applied before grouping so unified and split
+  // views stay consistent.
+  const visibleArticles = useMemo(() => {
+    if (!aiAnalysedOnly) return articles;
+    return articles.filter((a) => a.ai_analysis !== null);
+  }, [articles, aiAnalysedOnly]);
+
+  // Split view grouping: market-wide (is_macro) plus a section per matched asset.
   // An article appears in multiple sections when it matches multiple assets,
   // since is_macro and matched_asset_ids are independent fields.
   const splitSections = useMemo(() => {
     const sections: { id: string; label: string; articles: NewsArticle[] }[] = [];
 
-    const macroArticles = articles.filter((a) => a.is_macro);
+    const macroArticles = visibleArticles.filter((a) => a.is_macro);
     if (macroArticles.length > 0) {
       sections.push({ id: '__macro', label: 'Market-wide', articles: macroArticles });
     }
 
     const assetLookup = new Map<string, { label: string; articles: NewsArticle[] }>();
-    for (const article of articles) {
+    for (const article of visibleArticles) {
       for (const assetId of article.matched_asset_ids) {
         if (!assetLookup.has(assetId)) {
           assetLookup.set(assetId, {
@@ -273,18 +334,18 @@ export default function NewsFeed({ data }: NewsFeedProps) {
       });
     }
     return sections;
-  }, [articles, assetsById]);
+  }, [visibleArticles, assetsById]);
 
-  // Ordered list the modal's prev/next navigate through — the same list the
-  // clicked card was shown in: the full unified grid, or the specific split
-  // section the article belongs to. Duplicates across split sections are
-  // avoided because each list is one section's slice.
+  // Ordered list the modal prev/next navigate through: the same list the
+  // clicked card was shown in (the full unified grid, or the specific split
+  // section the article belongs to). Duplicates across split sections are
+  // avoided because each list is one section slice.
   const navList = useMemo(() => {
     if (viewMode === 'split' && sourceSection !== '__all') {
-      return splitSections.find((s) => s.id === sourceSection)?.articles ?? articles;
+      return splitSections.find((s) => s.id === sourceSection)?.articles ?? visibleArticles;
     }
-    return articles;
-  }, [viewMode, sourceSection, splitSections, articles]);
+    return visibleArticles;
+  }, [viewMode, sourceSection, splitSections, visibleArticles]);
 
   const currentIndex = navList.findIndex((a) => a.id === selectedId);
   const hasPrev = currentIndex > 0;
@@ -296,27 +357,35 @@ export default function NewsFeed({ data }: NewsFeedProps) {
     if (hasNext) setSelectedId(navList[currentIndex + 1].id);
   }, [hasNext, navList, currentIndex]);
 
-  const body = viewMode === 'split' ? (
-    splitSections.length > 0 ? (
-      splitSections.map((section) => (
-        <FeedSection key={section.id} label={section.label}>
-          {section.articles.map((article) => (
-            <NewsCard
-              key={article.id}
-              article={article}
-              assetsById={assetsById}
-              assetClassById={assetClassById}
-              onSelect={(id) => openArticle(id, section.id)}
-            />
-          ))}
-        </FeedSection>
-      ))
+  const body =
+    visibleArticles.length === 0 && aiAnalysedOnly ? (
+      <div className="border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
+        <p className="text-sm text-[var(--color-primary)] mb-1">No analysed articles yet</p>
+        <p className="text-xs text-[var(--color-secondary)]">
+          None of the loaded articles have AI analysis. Turn off the AI analysed filter to see all articles.
+        </p>
+      </div>
+    ) : viewMode === 'split' ? (
+      splitSections.length > 0 ? (
+        splitSections.map((section) => (
+          <FeedSection key={section.id} label={section.label}>
+            {section.articles.map((article) => (
+              <NewsCard
+                key={article.id}
+                article={article}
+                assetsById={assetsById}
+                assetClassById={assetClassById}
+                onSelect={(id) => openArticle(id, section.id)}
+              />
+            ))}
+          </FeedSection>
+        ))
+      ) : (
+        <CardGrid articles={visibleArticles} assetsById={assetsById} assetClassById={assetClassById} onSelect={(id) => openArticle(id, '__all')} />
+      )
     ) : (
-      <CardGrid articles={articles} assetsById={assetsById} assetClassById={assetClassById} onSelect={(id) => openArticle(id, '__all')} />
-    )
-  ) : (
-    <CardGrid articles={articles} assetsById={assetsById} assetClassById={assetClassById} onSelect={(id) => openArticle(id, '__all')} />
-  );
+      <CardGrid articles={visibleArticles} assetsById={assetsById} assetClassById={assetClassById} onSelect={(id) => openArticle(id, '__all')} />
+    );
 
   const content = (
     <div className="min-w-0 flex-1">
@@ -324,10 +393,13 @@ export default function NewsFeed({ data }: NewsFeedProps) {
         <div>
           <h1 className="text-lg font-semibold text-[var(--color-primary)] mb-1">News Engine</h1>
           <p className="font-mono text-xs text-[var(--color-secondary)]">
-            {articles.length} article{articles.length === 1 ? '' : 's'}
+            {visibleArticles.length} article{visibleArticles.length === 1 ? '' : 's'}
           </p>
         </div>
-        <FeedViewToggle viewMode={viewMode} onViewChange={setViewMode} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <AiAnalysedToggle active={aiAnalysedOnly} onChange={setAiAnalysedOnly} />
+          <FeedViewToggle viewMode={viewMode} onViewChange={setViewMode} />
+        </div>
       </div>
       <div className="space-y-1">{body}</div>
     </div>
@@ -350,7 +422,7 @@ export default function NewsFeed({ data }: NewsFeedProps) {
         </div>
       ) : (
         <>
-          {/* page content — blurred + dimmed behind the modal (two layers:
+          {/* page content, blurred and dimmed behind the modal (two layers:
               a blur filter on the content plus the dark scrim overlay below) */}
           <div
             className={selectedArticle
@@ -360,7 +432,7 @@ export default function NewsFeed({ data }: NewsFeedProps) {
             {content}
           </div>
 
-          {/* centered modal overlay (News Engine detail view) — dark scrim
+          {/* centered modal overlay (News Engine detail view) with dark scrim
               between the blurred page and the modal panel */}
           {selectedArticle && (
             <div
