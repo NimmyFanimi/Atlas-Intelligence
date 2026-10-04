@@ -296,6 +296,22 @@ export default function NewsFeed({ data }: NewsFeedProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedArticle, closeModal]);
 
+  // Hide the filter when there is nothing to filter: every loaded row
+  // already has analysis, so the toggle would never change the list.
+  const allAnalysed = useMemo(
+    () => articles.length > 0 && articles.every((a) => a.ai_analysis !== null),
+    [articles]
+  );
+
+  // Reset the filter if it becomes orphaned (everything gained analysis
+  // while the filter was on and the control is now hidden).
+  useEffect(() => {
+    if (allAnalysed && aiAnalysedOnly) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- required reset of orphaned filter state when control hides
+      setAiAnalysedOnly(false);
+    }
+  }, [allAnalysed, aiAnalysedOnly]);
+
   // Client-side content filter: when aiAnalysedOnly is on, keep only rows
   // with ai_analysis present. Applied before grouping so unified and split
   // views stay consistent.
@@ -398,7 +414,7 @@ export default function NewsFeed({ data }: NewsFeedProps) {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <AiAnalysedToggle active={aiAnalysedOnly} onChange={setAiAnalysedOnly} />
+          {!allAnalysed && <AiAnalysedToggle active={aiAnalysedOnly} onChange={setAiAnalysedOnly} />}
           <FeedViewToggle viewMode={viewMode} onViewChange={setViewMode} />
         </div>
       </div>
