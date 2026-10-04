@@ -3,7 +3,9 @@
 // Phase 2 of the two-phase News Engine ingestion model.
 // analyzeUnprocessedArticles() finds news_articles rows where ai_analysis
 // IS NULL, runs each through the analyst-persona prompt against Gemini
-// 3.6 Flash, and writes the parsed result back.
+// 3.6 Flash, and writes the parsed result back. analyzeBacklogArticles()
+// is the hourly backlog-only entry point: same query shape and same
+// oldest-first ordering, larger batch, no ingestion attached.
 //
 // This is deliberately separate from phase 1 (ingestRawArticles, in
 // news-ingestion.ts). A Gemini failure on one article never blocks or
@@ -13,9 +15,22 @@
 //
 // Reprocessing later (e.g. an improved prompt in a future week) is just:
 // null out ai_analysis for the rows you want redone, next run handles it.
+//
+// Daily budget: every Gemini HTTP attempt in this file (success or
+// failure, including 503s) is counted in gemini_usage_log via the
+// onRequestAttempt hook, and resolveGeminiKey() picks primary or fallback
+// before each article. Both cron routes share this file, so they share
+// one budget. Morning Brief uses its own separate key and never touches
+// this budget.
 
 import { supabaseAdmin } from './supabase/admin';
 import { callGeminiWithRetry } from './gemini-client';
+import {
+  GEMINI_SAFE_THRESHOLD,
+  QuotaExhaustedError,
+  incrementGeminiUsage,
+  resolveGeminiKey,
+} from './gemini-usage';
 
 const GEMINI_MODEL = 'gemini-3.6-flash';
 
@@ -23,49 +38,37 @@ const GEMINI_MODEL = 'gemini-3.6-flash';
 // one run never stacks more requests than the free-tier RPM limit into
 // the same 60-second window. Confirmed live limit for this project is
 // 5 RPM, and observed peak usage is only ~3 RPM, so 800ms between calls
-// (comfortably under the ~857ms floor 5 RPM would allow) still leaves
-// real headroom while freeing up time budget against cron-job.org's hard
-// 30-second timeout (see MAX_ARTICLES_PER_RUN below for the full reasoning).
+// still leaves real headroom.
 const DELAY_BETWEEN_CALLS_MS = 800;
 
-// Caps how many unanalyzed articles a single run processes. This exists
-// specifically because cron-job.org's free tier enforces a hard 30-second
-// request timeout, and this route's own maxDuration (60s) is irrelevant
-// if the scheduler gives up waiting before then. A real run on 2026-08-04
-// returned 200 from Vercel but still got marked "Failed (timeout)" by
-// cron-job.org, confirming the server-side response was taking too long
-// even with the previous cap of 5. Lowered to 2 at the time, but this
-// created a structural backlog: phase 1 can bring in up to 20 raw
-// articles per run while phase 2 only cleared 2, so unanalyzed articles
-// accumulated faster than they were processed (confirmed live on
-// 2026-08-27: 7 articles sitting unanalyzed, the oldest ~5 hours old).
-//
-// Briefly raised to 4, then 3, on 2026-08-27 while chasing the backlog,
-// but two separate live production tests immediately surfaced the real
-// root cause: individual Gemini calls were averaging ~10.4s each (well
-// past the 3-4s originally assumed), causing 25-33% of calls to hit the
-// old 10s per-call abort timeout and fail outright, not a batch-size
-// problem at all. The per-call timeout was raised to 15s to match
-// reality (see callGeminiForAnalysis). With real per-call time now
-// closer to ~10-15s, 2 articles/run already approaches the 30s ceiling
-// in the worst case (2 x 15.8s = 31.6s), so this reverted back to the
-// original, proven-safe value of 2 rather than staying at 3 or 4.
-//
-// The actual fix for the backlog is NOT this constant, it's cron
-// frequency. If the backlog still grows at a safe cap of 2, increase how
-// often news-ingest runs (currently every 2-3 hours via cron-job.org),
-// since Gemini's real latency makes this constant a hard ceiling, not a
-// dial to tune upward.
-const MAX_ARTICLES_PER_RUN = 2;
+// Caps how many unanalyzed articles the main cron processes per run.
+// Raised from 2 to 4 now that the route runs under GitHub Actions
+// (60s maxDuration, no 30s external ceiling) with an elapsed-time guard
+// below: realistic per-article cost is ~5-10s, so 4 articles typically
+// land around 20-40s plus inter-call delays, inside the guard. Worst
+// case (15s primary timeout x 3 retry attempts + 2s/4s backoff + 6s
+// fallback = ~57s for one unlucky article) is what the guard exists for:
+// it stops starting new articles once elapsed time passes TIME_GUARD_MS,
+// so a slow article delays the batch instead of pushing the run past
+// maxDuration.
+const MAX_ARTICLES_PER_RUN = 4;
 
-// This controls whether article analysis calls run concurrently (faster,
-// higher throughput, slightly more complex) or one-at-a-time (slower,
-// simplest, safest). Set to 'sequential' to instantly revert to the
-// original one-at-a-time behavior if concurrency ever causes problems
-// (e.g. rate limit errors, unexpected timing behavior). The sequential
-// path is the original, previously-verified-working logic, kept
-// intentionally unchanged as a safe fallback.
-const RUN_MODE: 'parallel' | 'sequential' = 'parallel';
+// Backlog cron batch. Larger than the main cron because this route does
+// no Marketaux fetch and exists only to drain backlog. Same guard
+// applies: 6 articles realistic cost is ~30-60s, so the guard will often
+// stop the batch at 4-5 articles on slow runs. That is intended: partial
+// progress every hour still drains steadily, and the next hourly run
+// picks up where this one stopped (oldest-first ordering).
+const BACKLOG_MAX_ARTICLES_PER_RUN = 6;
+
+// Stop starting new articles once a run has been going this long,
+// leaving margin under the route 60s maxDuration for the final DB write
+// and response. Applies to both the main and backlog entry points.
+// Worst-case math: one article can cost up to ~57s (15s timeout x 3
+// attempts + 2s + 4s backoff + 6s fallback), so the guard cannot bound
+// a single in-flight call, it only prevents starting fresh work with no
+// time left. 45000 leaves 15s for the in-flight write plus response.
+const TIME_GUARD_MS = 45000;
 
 interface UnanalyzedArticle {
   id: string;
@@ -78,6 +81,15 @@ interface AnalystNote {
   what_happened: string;
   why_it_matters: string;
   trade_read: string;
+}
+
+export interface AnalysisBatchResult {
+  found: number;
+  analyzed: number;
+  failed: number;
+  failedReasons: string[];
+  skipped: number;
+  reason?: string;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -139,38 +151,55 @@ Respond now with only the JSON object.`;
 
 /**
  * Calls Gemini 3.6 Flash with the analyst prompt and parses the response
- * as a JSON AnalystNote. Throws on API failure or malformed JSON, the
- * caller is responsible for deciding what happens to that article
- * (currently: skip it, leave ai_analysis null, it'll be retried next run).
+ * as a JSON AnalystNote. Budget-aware: resolves primary vs fallback
+ * through the shared daily budget before calling, and counts every HTTP
+ * attempt (including 503s) in gemini_usage_log. Throws
+ * QuotaExhaustedError when both keys are at or above the safe threshold
+ * so the caller can stop the batch gracefully. Throws on API failure or
+ * malformed JSON, the caller decides what happens to that article
+ * (currently: skip it, leave ai_analysis null, it will be retried later).
+ *
+ * Retries use the shared client defaults (3 attempts, 2s/4s backoff on
+ * network errors and 429/5xx). A 503 is therefore retried in-call before
+ * it ever surfaces here.
  */
 async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<AnalystNote> {
   const prompt = buildAnalystPrompt(article);
+  const resolved = await resolveGeminiKey();
+
+  if (!resolved) {
+    throw new QuotaExhaustedError(
+      `News Engine Gemini budget exhausted for today (primary and fallback at or above safe threshold ${GEMINI_SAFE_THRESHOLD})`
+    );
+  }
+
+  // Forced-fallback mode: drive the fallback key as the primary URL with
+  // no further fallback behind it, and count all attempts to fallback.
+  const callOptions =
+    resolved === 'primary'
+      ? {
+          timeoutMs: 15000,
+          fallbackTimeoutMs: 6000,
+          onRequestAttempt: (key: 'primary' | 'fallback') => incrementGeminiUsage(key),
+        }
+      : (() => {
+          const fallbackKey = process.env.GEMINI_API_KEY_FALLBACK;
+          if (!fallbackKey) {
+            throw new QuotaExhaustedError('Fallback key has budget but GEMINI_API_KEY_FALLBACK is not set');
+          }
+          return {
+            timeoutMs: 15000,
+            apiKey: fallbackKey,
+            fallbackApiKey: undefined as unknown as string | undefined,
+            onRequestAttempt: () => incrementGeminiUsage('fallback'),
+          };
+        })();
 
   let rawText: string;
   try {
-    rawText = await queueGeminiCall(() =>
-      callGeminiWithRetry(prompt, {
-        // News Engine's cron-triggered analysis call, now running under
-        // GitHub Actions (no 30-second ceiling; route's maxDuration is 60s).
-        // The entire call (primary attempt + fallback if needed) is
-        // serialized via queueGeminiCall above, because concurrent Gemini
-        // calls were found to intermittently hang on both primary and
-        // fallback keys. timeoutMs raised to 15000 (from the old
-        // cron-job.org-constrained 9000) since there is no tight shared
-        // budget to protect anymore. Worst case per article is roughly
-        // 15000 (primary) + 6000 (fallback, if needed) = 21000ms, and with
-        // MAX_ARTICLES_PER_RUN articles fully serialized, total worst case
-        // is roughly MAX_ARTICLES_PER_RUN * 21000ms. At MAX_ARTICLES_PER_RUN
-        // = 2, that's 42000ms, under the route's 60s maxDuration but with
-        // limited margin, if MAX_ARTICLES_PER_RUN increases this needs
-        // rechecking against maxDuration.
-        timeoutMs: 15000,
-        maxAttempts: 1,
-        retryDelaysMs: [],
-        fallbackTimeoutMs: 6000,
-      })
-    );
+    rawText = await queueGeminiCall(() => callGeminiWithRetry(prompt, callOptions));
   } catch (err) {
+    if (err instanceof QuotaExhaustedError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes(article.id)) {
       throw err;
@@ -186,7 +215,7 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
   let parsed: AnalystNote;
   try {
     parsed = JSON.parse(cleaned);
-  } catch (e) {
+  } catch {
     throw new Error(
       `Failed to parse Gemini JSON response for article ${article.id}: ${cleaned}`
     );
@@ -216,37 +245,42 @@ function queueGeminiCall<T>(fn: () => Promise<T>): Promise<T> {
   return result;
 }
 
-/**
- * Phase 2: finds news_articles rows with ai_analysis IS NULL, oldest
- * published_at first, runs each through Gemini, and writes the result
- * back. Processes articles sequentially (not in parallel) with a delay
- * between calls to respect the free-tier RPM limit, this matters more
- * here than in the earlier comparison test since a real ingestion run
- * could have more than a couple of articles pending at once.
- *
- * The explicit oldest-first ordering matters: without it, Postgres does
- * not guarantee which unanalyzed rows come back under a plain `.limit()`,
- * so specific old articles could get starved indefinitely if newer
- * unanalyzed rows keep winning an arbitrary ordering. Confirmed this was
- * happening in production on 2026-08-27 before the ordering was added.
- *
- * A failure on one article is logged and skipped, not thrown, so one
- * bad Gemini response doesn't abort analysis for the rest of the batch.
- * Skipped articles simply remain ai_analysis = null and are retried on
- * the next run.
- */
-export async function analyzeUnprocessedArticles(): Promise<{
-  found: number;
-  analyzed: number;
-  failed: number;
-  failedReasons: string[];
-}> {
+// Lightweight presence check: does any row still need analysis. Used by
+// the backlog route to short-circuit before any budget check or Gemini
+// call when there is nothing to do.
+export async function hasUnanalyzedArticles(): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('news_articles')
+    .select('id')
+    .is('ai_analysis', null)
+    .limit(1);
+
+  if (error) {
+    throw new Error(`Failed to check for unanalyzed articles: ${error.message}`);
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+// Shared sequential batch processor for both cron entry points. Fetches
+// up to batchLimit oldest unanalyzed rows, then processes them one at a
+// time: elapsed-time guard first (stop starting new work past the guard),
+// then the per-article Gemini call (which itself enforces the daily
+// budget). Quota exhaustion stops the whole batch, since further articles
+// would hit the same wall. Never throws for quota or per-article
+// failures, those are reported in the result. Only throws on the initial
+// fetch failing.
+async function processArticleBatch(
+  batchLimit: number,
+  timeGuardMs: number,
+  runTag: string
+): Promise<AnalysisBatchResult> {
   const { data, error } = await supabaseAdmin
     .from('news_articles')
     .select('id, title, description, source')
     .is('ai_analysis', null)
     .order('published_at', { ascending: true })
-    .limit(MAX_ARTICLES_PER_RUN);
+    .limit(batchLimit);
 
   if (error) {
     throw new Error(`Failed to fetch unanalyzed articles: ${error.message}`);
@@ -255,95 +289,85 @@ export async function analyzeUnprocessedArticles(): Promise<{
   const articles = (data || []) as UnanalyzedArticle[];
   let analyzed = 0;
   let failed = 0;
+  let skipped = 0;
   const failedReasons: string[] = [];
+  let reason: string | undefined;
 
   const runId = new Date().toISOString();
   const runStartMs = Date.now();
 
-  if (RUN_MODE === 'sequential') {
-    console.log(`[news-analysis] run=${runId} mode=sequential articles=${articles.length} starting`);
+  console.log(`[news-analysis] run=${runId} tag=${runTag} articles=${articles.length} starting`);
 
-    for (const article of articles) {
-      console.log(`[news-analysis] run=${runId} article=${article.id} starting`);
-      const articleStartMs = Date.now();
-      try {
-        const analysis = await callGeminiForAnalysis(article);
-
-        const { error: updateError } = await supabaseAdmin
-          .from('news_articles')
-          .update({
-            ai_analysis: analysis,
-            ai_model_used: GEMINI_MODEL,
-          })
-          .eq('id', article.id);
-
-        if (updateError) {
-          throw new Error(`Failed to write analysis for article ${article.id}: ${updateError.message}`);
-        }
-
-        analyzed += 1;
-        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=success`);
-      } catch (err) {
-        // Log and continue, this article stays null and gets retried next run.
-        console.error(`Analysis failed for article ${article.id}:`, err);
-        failed += 1;
-        failedReasons.push(formatFailureReason(article.id, err));
-        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=failed`);
-        logPossibleRateLimit(runId, article.id, err);
-      }
-
-      // Respect the free-tier RPM limit even under a larger backlog.
-      await sleep(DELAY_BETWEEN_CALLS_MS);
+  for (let i = 0; i < articles.length; i++) {
+    if (Date.now() - runStartMs > timeGuardMs) {
+      skipped = articles.length - i;
+      reason = 'time budget';
+      console.log(
+        `[news-analysis] run=${runId} tag=${runTag} stopping: elapsed time past guard, skipped=${skipped}`
+      );
+      break;
     }
 
-    console.log(`[news-analysis] run=${runId} mode=sequential totalDuration=${Date.now() - runStartMs}ms found=${articles.length} analyzed=${analyzed} failed=${failed} done`);
+    const article = articles[i];
+    console.log(`[news-analysis] run=${runId} article=${article.id} starting`);
+    const articleStartMs = Date.now();
+    try {
+      const analysis = await callGeminiForAnalysis(article);
 
-    return { found: articles.length, analyzed, failed, failedReasons };
+      const { error: updateError } = await supabaseAdmin
+        .from('news_articles')
+        .update({
+          ai_analysis: analysis,
+          ai_model_used: GEMINI_MODEL,
+        })
+        .eq('id', article.id);
+
+      if (updateError) {
+        throw new Error(`Failed to write analysis for article ${article.id}: ${updateError.message}`);
+      }
+
+      analyzed += 1;
+      console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=success`);
+    } catch (err) {
+      if (err instanceof QuotaExhaustedError) {
+        skipped = articles.length - i;
+        reason = 'quota near cap';
+        console.warn(`[news-analysis] run=${runId} stopping batch: ${err.message}`);
+        break;
+      }
+      // Log and continue, this article stays null and gets retried later.
+      console.error(`Analysis failed for article ${article.id}:`, err);
+      failed += 1;
+      failedReasons.push(formatFailureReason(article.id, err));
+      console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=failed`);
+      logPossibleRateLimit(runId, article.id, err);
+    }
+
+    // Respect the free-tier RPM limit even under a larger backlog.
+    await sleep(DELAY_BETWEEN_CALLS_MS);
   }
 
-  console.log(`[news-analysis] run=${runId} mode=parallel articles=${articles.length} starting`);
-
-  const settled = await Promise.allSettled(
-    articles.map(async (article) => {
-      console.log(`[news-analysis] run=${runId} article=${article.id} starting`);
-      const articleStartMs = Date.now();
-      try {
-        const analysis = await callGeminiForAnalysis(article);
-
-        const { error: updateError } = await supabaseAdmin
-          .from('news_articles')
-          .update({
-            ai_analysis: analysis,
-            ai_model_used: GEMINI_MODEL,
-          })
-          .eq('id', article.id);
-
-        if (updateError) {
-          throw new Error(`Failed to write analysis for article ${article.id}: ${updateError.message}`);
-        }
-
-        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=success`);
-        return article.id;
-      } catch (err) {
-        console.error(`Analysis failed for article ${article.id}:`, err);
-        console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=failed`);
-        logPossibleRateLimit(runId, article.id, err);
-        throw err;
-      }
-    })
+  console.log(
+    `[news-analysis] run=${runId} tag=${runTag} totalDuration=${Date.now() - runStartMs}ms found=${articles.length} analyzed=${analyzed} failed=${failed} skipped=${skipped} done`
   );
 
-  for (let i = 0; i < settled.length; i++) {
-    const result = settled[i];
-    if (result.status === 'fulfilled') {
-      analyzed += 1;
-    } else {
-      failed += 1;
-      failedReasons.push(formatFailureReason(articles[i].id, result.reason));
-    }
-  }
+  return { found: articles.length, analyzed, failed, failedReasons, skipped, reason };
+}
 
-  console.log(`[news-analysis] run=${runId} mode=parallel totalDuration=${Date.now() - runStartMs}ms found=${articles.length} analyzed=${analyzed} failed=${failed} done`);
+/**
+ * Main cron entry: up to MAX_ARTICLES_PER_RUN oldest unanalyzed rows.
+ * See processArticleBatch for guard, budget, and failure semantics.
+ */
+export async function analyzeUnprocessedArticles(): Promise<AnalysisBatchResult> {
+  return processArticleBatch(MAX_ARTICLES_PER_RUN, TIME_GUARD_MS, 'main');
+}
 
-  return { found: articles.length, analyzed, failed, failedReasons };
+/**
+ * Backlog cron entry: up to BACKLOG_MAX_ARTICLES_PER_RUN oldest
+ * unanalyzed rows, no ingestion attached. The route checks
+ * hasUnanalyzedArticles() first and never calls this when the backlog
+ * is empty.
+ */
+export async function analyzeBacklogArticles(): Promise<AnalysisBatchResult> {
+  return processArticleBatch(BACKLOG_MAX_ARTICLES_PER_RUN, TIME_GUARD_MS, 'backlog');
 }
