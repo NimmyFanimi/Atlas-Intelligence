@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
       reason?: string;
     };
     try {
-      analysisResult = await analyzeUnprocessedArticles();
+      analysisResult = await analyzeUnprocessedArticles(startedAt);
     } catch (err) {
       // Phase 1 already succeeded and committed its writes. Report phase 2's
       // failure but still return the phase 1 result rather than a bare 500,

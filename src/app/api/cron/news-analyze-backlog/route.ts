@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     let result: Awaited<ReturnType<typeof analyzeBacklogArticles>>;
     try {
-      result = await analyzeBacklogArticles();
+      result = await analyzeBacklogArticles(startedAt);
     } catch (err) {
       console.error('[news-analyze-backlog] batch failed:', err);
       return NextResponse.json(

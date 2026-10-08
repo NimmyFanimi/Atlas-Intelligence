@@ -45,31 +45,31 @@ const DELAY_BETWEEN_CALLS_MS = 800;
 // Caps how many unanalyzed articles the main cron processes per run.
 // Raised from 2 to 4 now that the route runs under GitHub Actions
 // (60s maxDuration, no 30s external ceiling) with an elapsed-time guard
-// below: realistic per-article cost is ~5-10s, so 4 articles typically
-// land around 20-40s plus inter-call delays, inside the guard. Worst
-// case (15s primary timeout x 3 retry attempts + 2s/4s backoff + 6s
-// fallback = ~57s for one unlucky article) is what the guard exists for:
-// it stops starting new articles once elapsed time passes TIME_GUARD_MS,
+// below: realistic per-article cost is ~5-10s, so a typical run lands
+// around 20-40s plus inter-call delays, inside the guard. The guard
+// stops starting new articles once elapsed time passes TIME_GUARD_MS,
 // so a slow article delays the batch instead of pushing the run past
 // maxDuration.
 const MAX_ARTICLES_PER_RUN = 4;
 
 // Backlog cron batch. Larger than the main cron because this route does
 // no Marketaux fetch and exists only to drain backlog. Same guard
-// applies: 6 articles realistic cost is ~30-60s, so the guard will often
-// stop the batch at 4-5 articles on slow runs. That is intended: partial
-// progress every hour still drains steadily, and the next hourly run
-// picks up where this one stopped (oldest-first ordering).
+// applies: at ~5-10s per article the guard will often stop the batch at
+// 3-4 articles on slow runs. That is intended: partial progress every
+// hour still drains steadily, and the next hourly run picks up where
+// this one stopped (oldest-first ordering).
 const BACKLOG_MAX_ARTICLES_PER_RUN = 6;
 
 // Stop starting new articles once a run has been going this long,
 // leaving margin under the route 60s maxDuration for the final DB write
 // and response. Applies to both the main and backlog entry points.
-// Worst-case math: one article can cost up to ~57s (15s timeout x 3
-// attempts + 2s + 4s backoff + 6s fallback), so the guard cannot bound
-// a single in-flight call, it only prevents starting fresh work with no
-// time left. 45000 leaves 15s for the in-flight write plus response.
-const TIME_GUARD_MS = 45000;
+// Worst-case math, single-attempt calls: one article can cost at most
+// timeoutMs (15000) + fallbackTimeoutMs (6000) + DELAY_BETWEEN_CALLS_MS
+// (800) = 21800ms, when the primary times out and the fallback is then
+// tried. Guard = 60000 - 21800 - 5000 margin = 32800, rounded to 33000.
+// The guard cannot bound a single in-flight call, it only prevents
+// starting fresh work with no time left.
+const TIME_GUARD_MS = 33000;
 
 interface UnanalyzedArticle {
   id: string;
@@ -102,6 +102,45 @@ function logPossibleRateLimit(runId: string, articleId: string, err: unknown): v
   if (/429|quota|rate limit/i.test(message)) {
     console.warn(`[news-analysis] run=${runId} article=${articleId} LIKELY RATE LIMIT ISSUE: ${message}`);
   }
+}
+
+// Upstream-overload classifier for the circuit breaker in
+// processArticleBatch. Matches only the error shapes this file produces
+// from gemini-client.ts message patterns, so no client change was needed:
+// - HTTP 5xx: "Gemini call failed: 503 ..." (primary) or
+//   "... fallback 503 ..." (fallback path), both wrapped per article as
+//   "Gemini call failed for article ...".
+// - Network error or timeout: TimeoutError ("signal timed out"), "fetch
+//   failed", "network error", or ECONNRESET/EAI_AGAIN style codes, which
+//   surface inside the both-keys or wrapped failure message.
+// Deliberately NOT matched: parse failures ("parse failure ...",
+// "missing required fields ...") mean a Gemini response did arrive, and
+// 429s, which have their own quota handling and must not trip this.
+function isUpstreamOverloadError(message: string): boolean {
+  if (/^(parse failure|missing required fields) for article /.test(message)) {
+    return false;
+  }
+  // Strip the per-article wrapper this file adds first, so the status
+  // match below sees the client message shape ("503 ...", "Gemini call
+  // failed: 503 ...", "... fallback 503 ...") instead of the article id,
+  // whose hex digits must never count as a status code. \b word
+  // boundaries (not trailing [\s;]) so a bare end-of-string "503" also
+  // matches.
+  const unwrapped = message.replace(/^Gemini call failed for article [^:]+: /, '');
+  if (/(?:^|failed: |fallback )5\d\d\b/.test(unwrapped)) {
+    return true;
+  }
+  if (/timed out|timeout|fetch failed|network error|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|socket hang up/i.test(unwrapped)) {
+    return true;
+  }
+  return false;
+}
+
+// A Gemini response arrived (success is handled by the caller; these are
+// the failure shapes that still prove the upstream served us), so the
+// breaker counter resets on these.
+function isGeminiResponseError(message: string): boolean {
+  return /^(parse failure|missing required fields) for article /.test(message);
 }
 
 // Diagnostic-only helper: formats one failed article's reason for the
@@ -173,9 +212,11 @@ Respond now with only the JSON object.`;
  * malformed JSON, the caller decides what happens to that article
  * (currently: skip it, leave ai_analysis null, it will be retried later).
  *
- * Retries use the shared client defaults (3 attempts, 2s/4s backoff on
- * network errors and 429/5xx). A 503 is therefore retried in-call before
- * it ever surfaces here.
+ * Single-attempt calls on purpose (maxAttempts: 1, no backoff): on a
+ * 20/day cap a same-key retry costs real quota, capacity spikes do not
+ * clear in seconds, and a failed row stays null so the next run picks it
+ * up again through the ai_analysis IS NULL query. The shared client
+ * defaults are left alone for Morning Brief.
  */
 async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<AnalystNote> {
   const prompt = buildAnalystPrompt(article);
@@ -196,11 +237,16 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
 
   // Forced-fallback mode: drive the fallback key as the primary URL with
   // no further fallback behind it, and count all attempts to fallback.
+  // Single attempt everywhere (maxAttempts: 1, no backoff): retries are
+  // disabled here, not in the shared client, so Morning Brief keeps its
+  // defaults.
   const callOptions =
     resolved === 'primary'
       ? {
           timeoutMs: 15000,
           fallbackTimeoutMs: 6000,
+          maxAttempts: 1,
+          retryDelaysMs: [],
           onRequestAttempt: (key: 'primary' | 'fallback') => incrementGeminiUsage(key),
           onQuotaExhausted: (key: 'primary' | 'fallback') => markGeminiKeyExhausted(key),
           generationConfig: { responseMimeType: 'application/json' },
@@ -217,6 +263,8 @@ async function callGeminiForAnalysis(article: UnanalyzedArticle): Promise<Analys
             timeoutMs: 15000,
             apiKey: fallbackKey,
             fallbackApiKey: undefined as unknown as string | undefined,
+            maxAttempts: 1,
+            retryDelaysMs: [],
             onRequestAttempt: () => incrementGeminiUsage('fallback'),
             onQuotaExhausted: () => markGeminiKeyExhausted('fallback'),
             generationConfig: { responseMimeType: 'application/json' },
@@ -312,7 +360,8 @@ export async function hasUnanalyzedArticles(): Promise<boolean> {
 async function processArticleBatch(
   batchLimit: number,
   timeGuardMs: number,
-  runTag: string
+  runTag: string,
+  runStartMs: number = Date.now()
 ): Promise<AnalysisBatchResult> {
   const { data, error } = await supabaseAdmin
     .from('news_articles')
@@ -331,9 +380,13 @@ async function processArticleBatch(
   let skipped = 0;
   const failedReasons: string[] = [];
   let reason: string | undefined;
+  // Upstream circuit breaker: consecutive articles whose Gemini call
+  // failed with an upstream error (5xx, network error, timeout). Trips
+  // at 2 in a row, since capacity spikes do not clear between articles
+  // and each attempt costs daily quota.
+  let consecutiveUpstreamFailures = 0;
 
   const runId = new Date().toISOString();
-  const runStartMs = Date.now();
 
   console.log(`[news-analysis] run=${runId} tag=${runTag} articles=${articles.length} starting`);
 
@@ -366,6 +419,7 @@ async function processArticleBatch(
       }
 
       analyzed += 1;
+      consecutiveUpstreamFailures = 0;
       console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=success`);
     } catch (err) {
       if (err instanceof QuotaExhaustedError) {
@@ -380,6 +434,20 @@ async function processArticleBatch(
       failedReasons.push(formatFailureReason(article.id, err));
       console.log(`[news-analysis] run=${runId} article=${article.id} duration=${Date.now() - articleStartMs}ms status=failed`);
       logPossibleRateLimit(runId, article.id, err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (isGeminiResponseError(message)) {
+        consecutiveUpstreamFailures = 0;
+      } else if (isUpstreamOverloadError(message)) {
+        consecutiveUpstreamFailures += 1;
+        if (consecutiveUpstreamFailures >= 2) {
+          skipped = articles.length - i - 1;
+          reason = 'upstream overloaded';
+          console.warn(
+            `[news-analysis] run=${runId} tag=${runTag} stopping: ${consecutiveUpstreamFailures} consecutive upstream failures, skipped=${skipped}`
+          );
+          break;
+        }
+      }
     }
 
     // Respect the free-tier RPM limit even under a larger backlog.
@@ -396,9 +464,13 @@ async function processArticleBatch(
 /**
  * Main cron entry: up to MAX_ARTICLES_PER_RUN oldest unanalyzed rows.
  * See processArticleBatch for guard, budget, and failure semantics.
+ * Takes the route start timestamp so the elapsed-time guard covers
+ * ingestion too, not just the batch.
  */
-export async function analyzeUnprocessedArticles(): Promise<AnalysisBatchResult> {
-  return processArticleBatch(MAX_ARTICLES_PER_RUN, TIME_GUARD_MS, 'main');
+export async function analyzeUnprocessedArticles(
+  runStartMs: number = Date.now()
+): Promise<AnalysisBatchResult> {
+  return processArticleBatch(MAX_ARTICLES_PER_RUN, TIME_GUARD_MS, 'main', runStartMs);
 }
 
 /**
@@ -407,6 +479,8 @@ export async function analyzeUnprocessedArticles(): Promise<AnalysisBatchResult>
  * hasUnanalyzedArticles() first and never calls this when the backlog
  * is empty.
  */
-export async function analyzeBacklogArticles(): Promise<AnalysisBatchResult> {
-  return processArticleBatch(BACKLOG_MAX_ARTICLES_PER_RUN, TIME_GUARD_MS, 'backlog');
+export async function analyzeBacklogArticles(
+  runStartMs: number = Date.now()
+): Promise<AnalysisBatchResult> {
+  return processArticleBatch(BACKLOG_MAX_ARTICLES_PER_RUN, TIME_GUARD_MS, 'backlog', runStartMs);
 }
