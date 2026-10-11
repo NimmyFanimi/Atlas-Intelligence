@@ -52,13 +52,14 @@ const DELAY_BETWEEN_CALLS_MS = 800;
 // maxDuration.
 const MAX_ARTICLES_PER_RUN = 4;
 
-// Backlog cron batch. Larger than the main cron because this route does
+// Backlog cron batch. Same size as the main cron (4) because this route does
 // no Marketaux fetch and exists only to drain backlog. Same guard
 // applies: at ~5-10s per article the guard will often stop the batch at
 // 3-4 articles on slow runs. That is intended: partial progress every
 // hour still drains steadily, and the next hourly run picks up where
-// this one stopped (oldest-first ordering).
-const BACKLOG_MAX_ARTICLES_PER_RUN = 6;
+// this one stopped (oldest-first ordering). The time guard plus the
+// upstream breaker bound request bursts in a per-minute 429 storm.
+const BACKLOG_MAX_ARTICLES_PER_RUN = 4;
 
 // Stop starting new articles once a run has been going this long,
 // leaving margin under the route 60s maxDuration for the final DB write
@@ -113,9 +114,13 @@ function logPossibleRateLimit(runId: string, articleId: string, err: unknown): v
 // - Network error or timeout: TimeoutError ("signal timed out"), "fetch
 //   failed", "network error", or ECONNRESET/EAI_AGAIN style codes, which
 //   surface inside the both-keys or wrapped failure message.
+// - Per-minute 429s (no "perday" in the message): the per-minute limit
+//   is 5 RPM per key and each article can cost a primary plus a fallback
+//   request, so these now count toward the breaker.
 // Deliberately NOT matched: parse failures ("parse failure ...",
 // "missing required fields ...") mean a Gemini response did arrive, and
-// 429s, which have their own quota handling and must not trip this.
+// daily 429s (message contains "perday"), which keep their own quota
+// handling (fallback, markGeminiKeyExhausted, QuotaExhaustedError).
 function isUpstreamOverloadError(message: string): boolean {
   if (/^(parse failure|missing required fields) for article /.test(message)) {
     return false;
@@ -129,6 +134,9 @@ function isUpstreamOverloadError(message: string): boolean {
   const unwrapped = message.replace(/^Gemini call failed for article [^:]+: /, '');
   if (/(?:^|failed: |fallback )5\d\d\b/.test(unwrapped)) {
     return true;
+  }
+  if (/(?:^|failed: |fallback |\()429\b/.test(unwrapped)) {
+    return !/perday/i.test(unwrapped);
   }
   if (/timed out|timeout|fetch failed|network error|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|socket hang up/i.test(unwrapped)) {
     return true;

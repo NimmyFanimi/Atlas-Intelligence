@@ -2,7 +2,7 @@
 //
 // Hourly backlog-only analysis cron for the News Engine. Analysis only:
 // no Marketaux fetch, no ingestRawArticles call. Drains rows where
-// ai_analysis IS NULL, oldest first, up to 6 per run behind the same
+// ai_analysis IS NULL, oldest first, up to 4 per run behind the same
 // elapsed-time guard as the main cron.
 //
 // Ordering inside GET matters and is load-bearing:
