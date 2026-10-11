@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { withSupabaseRetry } from '@/lib/supabase/with-retry';
 import { formatPrice, formatPercent } from '@/lib/utils/format';
 
 export interface Snapshot {
@@ -49,11 +50,16 @@ const SPARKLINE_POINTS = 30;
 // getCommoditiesOverview / commodityDetail pattern.
 
 export async function getMarketsDashboard(): Promise<MarketsDashboardData> {
-  const { data: assets, error: assetsError } = await supabaseAdmin
-    .from('assets')
-    .select('id, symbol, name, asset_class, finnhub_symbol, fred_series_id, eia_series_id')
-    .order('asset_class', { ascending: true })
-    .order('symbol', { ascending: true });
+  const { data: assets, error: assetsError } = await withSupabaseRetry(
+    'dashboard:assets',
+    (signal) =>
+      supabaseAdmin
+        .from('assets')
+        .select('id, symbol, name, asset_class, finnhub_symbol, fred_series_id, eia_series_id')
+        .order('asset_class', { ascending: true })
+        .order('symbol', { ascending: true })
+        .abortSignal(signal)
+  );
 
   if (assetsError || !assets) {
     throw new Error(`Failed to load assets: ${assetsError?.message}`);
@@ -64,12 +70,17 @@ export async function getMarketsDashboard(): Promise<MarketsDashboardData> {
   // ORDER BY timestamp cap. Mirrors commodityDetail.ts / getCommoditiesOverview.
   const perAssetResults = await Promise.all(
     assets.map(async (asset) => {
-      const { data, error } = await supabaseAdmin
-        .from('market_snapshots')
-        .select('timestamp, price, change_pct, change_abs, metadata')
-        .eq('asset_id', asset.id)
-        .order('timestamp', { ascending: false })
-        .limit(SPARKLINE_POINTS);
+      const { data, error } = await withSupabaseRetry(
+        `dashboard:snapshots:${asset.symbol}`,
+        (signal) =>
+          supabaseAdmin
+            .from('market_snapshots')
+            .select('timestamp, price, change_pct, change_abs, metadata')
+            .eq('asset_id', asset.id)
+            .order('timestamp', { ascending: false })
+            .limit(SPARKLINE_POINTS)
+            .abortSignal(signal)
+      );
 
       if (error) {
         throw new Error(`Failed to load snapshots for ${asset.symbol}: ${error.message}`);

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { withSupabaseRetry } from '@/lib/supabase/with-retry';
 import type { NewsArticle, NewsAiAnalysis } from '@/components/news/NewsCard';
 
 export interface NewsFeedData {
@@ -44,15 +45,21 @@ interface NewsRow {
 export async function getNewsFeed(): Promise<NewsFeedData> {
   const [{ data: assets, error: assetsError }, { data: articles, error: articlesError }] =
     await Promise.all([
-      supabaseAdmin
-        .from('assets')
-        .select('id, symbol, finnhub_symbol, asset_class'),
-      supabaseAdmin
-        .from('news_articles')
-        .select(
-          'id, marketaux_uuid, title, description, url, source, published_at, sentiment_score, matched_asset_ids, is_macro, ai_analysis, ai_model_used, image_url'
-        )
-        .order('published_at', { ascending: false }),
+      withSupabaseRetry('news:assets', (signal) =>
+        supabaseAdmin
+          .from('assets')
+          .select('id, symbol, finnhub_symbol, asset_class')
+          .abortSignal(signal)
+      ),
+      withSupabaseRetry('news:articles', (signal) =>
+        supabaseAdmin
+          .from('news_articles')
+          .select(
+            'id, marketaux_uuid, title, description, url, source, published_at, sentiment_score, matched_asset_ids, is_macro, ai_analysis, ai_model_used, image_url'
+          )
+          .order('published_at', { ascending: false })
+          .abortSignal(signal)
+      ),
     ]);
 
   if (assetsError) {
